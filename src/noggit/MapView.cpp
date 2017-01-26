@@ -2,69 +2,68 @@
 
 #undef _UNICODE
 
-#include <algorithm>
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <map>
-#include <stdlib.h>
-#include <string>
-#include <vector>
+#include <noggit/Brush.h> // brush
+#include <noggit/ConfigFile.h>
+#include <noggit/DBC.h>
+#include <noggit/Environment.h>
+#include <noggit/Environment.h>
+#include <noggit/FreeType.h> // freetype::
+#include <noggit/Log.h>
+#include <noggit/MapChunk.h>
+#include <noggit/MapView.h>
+#include <noggit/Misc.h>
+#include <noggit/ModelManager.h> // ModelManager
+#include <noggit/Project.h>
+#include <noggit/Settings.h>
+#include <noggit/TextureManager.h> // TextureManager, Texture
+#include <noggit/WMOInstance.h> // WMOInstance
+#include <noggit/World.h>
+#include <noggit/application.h> // app.getStates(), gPop, gFPS, app.getArial14(), morpheus40, arial...
+#include <noggit/map_index.hpp>
+#include <noggit/ui/AppInfo.h> // appInfo
+#include <noggit/ui/CapsWarning.h>
+#include <noggit/ui/CheckBox.h> // UICheckBox
+#include <noggit/ui/CursorSwitcher.h> // UICursorSwitcher
+#include <noggit/ui/DetailInfos.h> // detailInfos
+#include <noggit/ui/ExitWarning.h>
+#include <noggit/ui/FlattenTool.hpp>
+#include <noggit/ui/Gradient.h> // UIGradient
+#include <noggit/ui/HelperModels.h>
+#include <noggit/ui/MapViewGUI.h> // UIMapViewGUI
+#include <noggit/ui/MenuBar.h> // UIMenuBar, menu items, ..
+#include <noggit/ui/MinimapWindow.h> // UIMinimapWindow
+#include <noggit/ui/ModelImport.h>
+#include <noggit/ui/ObjectEditor.h>
+#include <noggit/ui/RotationEditor.h>
+#include <noggit/ui/shader_tool.hpp>
+#include <noggit/ui/Slider.h> // UISlider
+#include <noggit/ui/StatusBar.h> // statusBar
+#include <noggit/ui/terrain_tool.hpp>
+#include <noggit/ui/Text.h> // UIText
+#include <noggit/ui/Texture.h> // textureUI
+#include <noggit/ui/TexturePicker.h>
+#include <noggit/ui/TextureSwitcher.h>
+#include <noggit/ui/TexturingGUI.h>
+#include <noggit/ui/ToggleGroup.h> // UIToggleGroup
+#include <noggit/ui/Toolbar.h> // UIToolbar
+#include <noggit/ui/ToolbarIcon.h> // ToolbarIcon
+#include <noggit/ui/Water.h>
+#include <noggit/ui/WaterSaveWarning.h>
+#include <noggit/ui/WaterTypeBrowser.h>
+#include <noggit/ui/ZoneIDBrowser.h>
+#include <opengl/matrix.hpp>
+#include <opengl/scoped.hpp>
 
 #include <boost/filesystem.hpp>
 
-#ifdef __FILESAREMISSING
-#include <IL/il.h>
-#endif
-
-#include "Brush.h" // brush
-#include "ConfigFile.h"
-#include "DBC.h"
-#include "Environment.h"
-#include "FreeType.h" // freetype::
-#include "Log.h"
-#include "MapChunk.h"
-#include "MapView.h"
-#include "Misc.h"
-#include "ModelManager.h" // ModelManager
-#include "application.h" // app.getStates(), gPop, gFPS, app.getArial14(), morpheus40, arial...
-#include "Project.h"
-#include "Settings.h"
-#include "Environment.h"
-#include "TextureManager.h" // TextureManager, Texture
-#include "UIAppInfo.h" // appInfo
-#include "UICapsWarning.h"
-#include "UICheckBox.h" // UICheckBox
-#include "UICursorSwitcher.h" // UICursorSwitcher
-#include "UIDetailInfos.h" // detailInfos
-#include "UIExitWarning.h"
-#include "UIGradient.h" // UIGradient
-#include "UIHelperModels.h"
-#include "UIMapViewGUI.h" // UIMapViewGUI
-#include "UIMenuBar.h" // UIMenuBar, menu items, ..
-#include "UIMinimapWindow.h" // UIMinimapWindow
-#include "UIModelImport.h"
-#include "UIObjectEditor.h"
-#include "UIRotationEditor.h"
-#include "UISlider.h" // UISlider
-#include "UIStatusBar.h" // statusBar
-#include "UIText.h" // UIText
-#include "UITexture.h" // textureUI
-#include "UITexturePicker.h"
-#include "UITextureSwitcher.h"
-#include "UITexturingGUI.h"
-#include "UIToggleGroup.h" // UIToggleGroup
-#include "UIToolbar.h" // UIToolbar
-#include "UIToolbarIcon.h" // ToolbarIcon
-#include "UIWater.h"
-#include "UIWaterSaveWarning.h"
-#include "UIWaterTypeBrowser.h"
-#include "UIZoneIDBrowser.h"
-#include "WMOInstance.h" // WMOInstance
-#include "World.h"
-#include "map_index.hpp"
-#include <opengl/scoped.hpp>
-#include <opengl/matrix.hpp>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <string>
+#include <vector>
 
 static const float XSENS = 15.0f;
 static const float YSENS = 15.0f;
@@ -92,7 +91,6 @@ boost::optional<selection_type> lastSelected;
 bool TestSelection = false;
 
 extern bool DrawMapContour;
-extern bool drawFlags;
 
 // extern row and col form Palette UI
 
@@ -119,53 +117,6 @@ bool  alloff_wmo = false;
 bool  alloff_detailselect = false;
 bool  alloff_fog = false;
 bool  alloff_terrain = false;
-
-
-UISlider* shader_radius;
-UISlider* shader_red;
-UISlider* shader_green;
-UISlider* shader_blue;
-UISlider* shader_speed;
-float shaderRadius = 15.0f;
-float shaderSpeed = 1.0f;
-float shaderRed = 1.0f;
-float shaderGreen = 1.0f;
-float shaderBlue = 1.0f;
-
-
-UISlider* ground_brush_radius;
-float groundBrushRadius = 15.0f;
-UISlider* ground_brush_speed;
-float groundBrushSpeed = 1.0f;
-UISlider* ground_blur_speed;
-float groundBlurSpeed = 2.0f;
-
-#ifdef _WIN32
-int		groundTabletControlSelect = 1;
-int    groundTabletSelect = 1;
-int shaderTabletControlSelect = 0;//Defaulting to off
-#endif
-
-UISlider* blur_brush;
-float blurBrushRadius = 10.0f;
-int    blurBrushType = 1;
-
-int flattenType = eFlattenMode_Both;
-
-UICheckBox* toggle_flatten;
-
-UISlider* flatten_angle;
-float flattenAngle = 0.0f;
-
-UISlider* flatten_orientation;
-float flattenOrientation = 0.0f;
-
-math::vector_3d flattenRelativePos(0, 0, 0);
-bool flattenRelativeMode = false;
-UITextBox* flatten_relative_x;
-UITextBox* flatten_relative_y;
-UITextBox* flatten_relative_z;
-UICheckBox* toggle_flatten_relative;
 
 UISlider* paint_brush;
 UISlider* spray_size;
@@ -196,129 +147,9 @@ UIMapViewGUI* mainGui;
 
 UIFrame* MapChunkWindow;
 
-UIToggleGroup * gFlattenTypeGroup;
-UIToggleGroup * gBlurToggleGroup;
-UIToggleGroup * gGroundToggleGroup;
 UIToggleGroup * gFlagsToggleGroup;
 
-#ifdef _WIN32
-UIToggleGroup * gGroundTabletControl;
-UIToggleGroup * gShaderTabletControl;
-UIToggleGroup * gGroundTabletActiveGroup;
-#endif
-
-UIWindow *setting_ground;
-UIWindow *setting_blur;
 UIWindow *settings_paint;
-UIWindow *settings_shader;
-
-void toggleFlattenLock(bool b, int)
-{
-  flattenRelativeMode = b;
-}
-
-void updateFlattenRelativeX(UITextBox::Ptr textBox, const std::string& value)
-{
-  try
-  {
-    float val = std::atof(value.c_str());
-    flattenRelativePos.x = val;
-    flatten_relative_x->value(misc::floatToStr(val));
-  }
-  catch (std::exception const & e)
-  {
-    flatten_relative_x->value(misc::floatToStr(flattenRelativePos.x));
-  }
-}
-
-void updateFlattenRelativeY(UITextBox::Ptr textBox, const std::string& value)
-{
-  try
-  {
-    float val = std::atof(value.c_str());
-    flattenRelativePos.y = val;
-    flatten_relative_y->value(misc::floatToStr(val));
-  }
-  catch (std::exception const & e)
-  {
-    flatten_relative_x->value(misc::floatToStr(flattenRelativePos.y));
-  }
-}
-
-void updateFlattenRelativeZ(UITextBox::Ptr textBox, const std::string& value)
-{
-  try
-  {
-    float val = std::atof(value.c_str());
-    flattenRelativePos.z = val;
-    flatten_relative_z->value(misc::floatToStr(val));
-  }
-  catch (std::exception const & e)
-  {
-    flatten_relative_x->value(misc::floatToStr(flattenRelativePos.z));
-  }
-}
-
-void setGroundBrushRadius(float f)
-{
-  groundBrushRadius = f;
-}
-
-void SetShaderRadius(float f)
-{
-  shaderRadius = f;
-}
-
-void SetShaderSpeed(float f)
-{
-  shaderSpeed = f;
-}
-
-void SetShaderRed(float f)
-{
-  shaderRed = f;
-  Environment::getInstance()->cursorColorR = f / 2;
-}
-
-void SetShaderGreen(float f)
-{
-  shaderGreen = f;
-  Environment::getInstance()->cursorColorG = f / 2;
-}
-
-void SetShaderBlue(float f)
-{
-  shaderBlue = f;
-  Environment::getInstance()->cursorColorB = f / 2;
-}
-
-void setGroundBrushSpeed(float f)
-{
-  groundBrushSpeed = f;
-}
-
-
-void setBlurBrushRadius(float f)
-{
-  blurBrushRadius = f;
-}
-
-void setBlurBrushSpeed(float f)
-{
-  groundBlurSpeed = f;
-}
-
-void setFlattenAngle(float f)
-{
-  flattenAngle = f;
-  Environment::getInstance()->flattenAngle = f;
-}
-
-void setFlattenOrientation(float f)
-{
-  flattenOrientation = f;
-  Environment::getInstance()->flattenOrientation = (M_PI*f) / 180;
-}
 
 
 void setTextureBrushHardness(float f)
@@ -358,49 +189,21 @@ void setSprayBrushPressure(float f)
   brushSprayPressure = f;
 }
 
-void setTextureBrushLevel(float f)
-{
-  brushLevel = (1.0f - f)*255.0f;
-}
 
-void toggleFlattenAngle(bool state, int)
-{
-  Environment::getInstance()->flattenAngleEnabled = state;
-}
-
-void SaveOrReload(UIFrame*, int pMode)
-{
-  if (pMode == 1)
-  {
-    gWorld->mapIndex->reloadTile(tile_index(gWorld->camera));
-  }
-  else if (pMode == 0)
-  {
-    gWorld->mapIndex->saveTile(tile_index(gWorld->camera));
-  }
-  else if (pMode == 2)
-  {
-    gWorld->mapIndex->saveChanged();
-  }
-  else if (pMode == 3)
-  {
-    mainGui->escWarning->show();
-  }
-}
 
 void change_settings_window(int oldid, int newid)
 {
-  if (oldid + 1 == newid || !setting_ground || !setting_blur || !settings_paint
-    || !settings_shader || !mainGui || !mainGui->guiWater || !mainGui->objectEditor)
+  if (oldid + 1 == newid || !mainGui || !mainGui->terrainTool || !mainGui->flattenTool || !settings_paint
+    || !mainGui->shaderTool || !mainGui->guiWater || !mainGui->objectEditor)
   {
     return;
   }
 
   mainGui->guiWaterTypeSelector->hide();
-  setting_ground->hide();
-  setting_blur->hide();
+  mainGui->terrainTool->hide();
+  mainGui->flattenTool->hide();
   settings_paint->hide();
-  settings_shader->hide();
+  mainGui->shaderTool->hide();
   mainGui->guiWater->hide();
   mainGui->TextureSwitcher->hide();
   mainGui->objectEditor->hide();
@@ -416,12 +219,12 @@ void change_settings_window(int oldid, int newid)
   switch (oldid)
   {
   case 1:
-    tool_settings_x = (int)setting_ground->x();
-    tool_settings_y = (int)setting_ground->y();
+    tool_settings_x = (int)mainGui->terrainTool->x();
+    tool_settings_y = (int)mainGui->terrainTool->y();
     break;
   case 2:
-    tool_settings_x = (int)setting_blur->x();
-    tool_settings_y = (int)setting_blur->y();
+    tool_settings_x = (int)mainGui->flattenTool->x();
+    tool_settings_y = (int)mainGui->flattenTool->y();
     break;
   case 3:
     tool_settings_x = (int)settings_paint->x();
@@ -436,22 +239,22 @@ void change_settings_window(int oldid, int newid)
     tool_settings_y = (int)mainGui->guiWater->y();
     break;
   case 9:
-    tool_settings_x = (int)settings_shader->x();
-    tool_settings_y = (int)settings_shader->y();
+    tool_settings_x = (int)mainGui->shaderTool->x();
+    tool_settings_y = (int)mainGui->shaderTool->y();
     break;
   }
   // set new win pos and make visible
   switch (newid)
   {
   case 1:
-    setting_ground->x((const float)tool_settings_x);
-    setting_ground->y((const float)tool_settings_y);
-    setting_ground->show();
+    mainGui->terrainTool->x((const float)tool_settings_x);
+    mainGui->terrainTool->y((const float)tool_settings_y);
+    mainGui->terrainTool->show();
     break;
   case 2:
-    setting_blur->x((const float)tool_settings_x);
-    setting_blur->y((const float)tool_settings_y);
-    setting_blur->show();
+    mainGui->flattenTool->x((const float)tool_settings_x);
+    mainGui->flattenTool->y((const float)tool_settings_y);
+    mainGui->flattenTool->show();
     break;
   case 3:
     settings_paint->x((const float)tool_settings_x);
@@ -469,9 +272,9 @@ void change_settings_window(int oldid, int newid)
     mainGui->guiWater->show();
     break;
   case 9:
-    settings_shader->x((const float)tool_settings_x);
-    settings_shader->y((const float)tool_settings_y);
-    settings_shader->show();
+    mainGui->shaderTool->x((const float)tool_settings_x);
+    mainGui->shaderTool->y((const float)tool_settings_y);
+    mainGui->shaderTool->show();
     break;
   case 10:
     mainGui->objectEditor->x((const float)tool_settings_x - 90.0f);
@@ -483,24 +286,7 @@ void change_settings_window(int oldid, int newid)
   }
 }
 
-void openSwapper(UIFrame*, int)
-{
-  mainGui->TextureSwitcher->show();
-  settings_paint->hide();
-}
-
-void removeTexDuplicateOnADT(UIFrame*, int)
-{
-  gWorld->removeTexDuplicateOnADT(tile_index(gWorld->camera));
-}
-
-void openHelp(UIFrame*, int)
-{
-  mainGui->showHelp();
-}
-
-
-void openURL(UIFrame*, int target)
+void openURL(int target)
 {
 #if defined(_WIN32) || defined(WIN32)
   if (target == 1)  ShellExecute(nullptr, "open", "http://modcraft.superparanoid.de", nullptr, nullptr, SW_SHOWNORMAL);
@@ -508,7 +294,7 @@ void openURL(UIFrame*, int target)
 #endif
 }
 
-void ResetSelectedObjectRotation(UIFrame*, int)
+void ResetSelectedObjectRotation()
 {
   if (gWorld->IsSelection(eEntry_WMO))
   {
@@ -527,7 +313,7 @@ void ResetSelectedObjectRotation(UIFrame*, int)
   }
 }
 
-void SnapSelectedObjectToGround(UIFrame*, int)
+void SnapSelectedObjectToGround()
 {
   if (gWorld->IsSelection(eEntry_WMO))
   {
@@ -548,7 +334,7 @@ void SnapSelectedObjectToGround(UIFrame*, int)
 }
 
 
-void DeleteSelectedObject(UIFrame*, int)
+void DeleteSelectedObject()
 {
   if (gWorld->IsSelection(eEntry_WMO))
   {
@@ -560,17 +346,12 @@ void DeleteSelectedObject(UIFrame*, int)
   }
 }
 
-void showHelperModels(UIFrame*, int)
-{
-  mainGui->HelperModels->show();
-}
-
 /*!
 \brief Import a new model form a text file or a hard coded one.
 Imports a model from the import.txt (or the ImportFile from the config), the wowModelViewer log or just insert some hard coded testing models.
 \param id the id switch the import kind
 */
-void InsertObject(UIFrame*, int id)
+void InsertObject(int id)
 {
   //! \todo Beautify.
 
@@ -772,86 +553,6 @@ void InsertObject(UIFrame*, int id)
   //! \todo Memoryleak: These models will never get deleted.
 }
 
-void view_texture_palette(UIFrame*, int)
-{
-  mainGui->TexturePalette->toggleVisibility();
-}
-
-void exit_tilemode(UIFrame*, int)
-{
-  app.pop = true;
-}
-
-void test_menu_action(UIFrame*, int)
-{
-  gWorld->saveWDT();
-}
-
-void moveHeightmap(UIFrame*, int)
-{
-  // set areaid on all chunks of the current ADT
-  if (Environment::getInstance()->selectedAreaID)
-  {
-    gWorld->moveHeight(Environment::getInstance()->selectedAreaID, tile_index(gWorld->camera));
-  }
-}
-
-void clearHeightmap(UIFrame*, int)
-{
-  // set areaid on all chunks of the current ADT
-  if (Environment::getInstance()->selectedAreaID)
-  {
-    gWorld->clearHeight(Environment::getInstance()->selectedAreaID, tile_index(gWorld->camera));
-  }
-}
-
-void adtSetAreaID(UIFrame*, int)
-{
-  // set areaid on all chunks of the current ADT
-  if (Environment::getInstance()->selectedAreaID)
-  {
-    gWorld->setAreaID(Environment::getInstance()->selectedAreaID, tile_index(gWorld->camera));
-  }
-}
-
-void clearAllModels(UIFrame*, int)
-{
-  // call the clearAllModelsOnADT method to clear them all on current ADT
-  gWorld->clearAllModelsOnADT(tile_index(gWorld->camera));
-}
-
-void ClearDupModels(UIFrame*, int)
-{
-  gWorld->delete_duplicate_model_and_wmo_instances();
-}
-
-void menuWater(UIFrame*, int id)
-{
-  if (id == 1)
-  {
-    gWorld->addWaterLayer(tile_index(gWorld->camera));
-  }
-  else if (id == 0)
-  {
-    gWorld->deleteWaterLayer(tile_index(gWorld->camera));
-  }
-}
-
-void funcAllFix(UIFrame*, int id)
-{
-  gWorld->fixAllGaps();
-}
-
-void ClearShader(UIFrame*, int id)
-{
-  gWorld->ClearShader(tile_index(gWorld->camera));
-}
-
-void toBigAlpha(UIFrame*, int)
-{
-  gWorld->convertMapToBigAlpha();
-}
-
 void changeZoneIDValue(UIFrame* /*f*/, int set)
 {
   Environment::getInstance()->selectedAreaID = set;
@@ -879,18 +580,6 @@ std::string getCurrentHeightmapPath()
     << "_" << misc::FtoIround((gWorld->camera.x - (TILESIZE / 2)) / TILESIZE) << "_" << misc::FtoIround((gWorld->camera.z - (TILESIZE / 2)) / TILESIZE) << ".png";
   return png_filename.str();
 
-}
-
-void clearTexture(UIFrame* /*f*/, int /*set*/)
-{
-  // set areaid on all chunks of the current ADT
-  gWorld->setBaseTexture(tile_index(gWorld->camera));
-}
-
-
-void showCursorSwitcher(UIFrame* /*f*/, int /*set*/)
-{
-  mainGui->showCursorSwitcher();
 }
 
 #ifdef __FILESAREMISSING
@@ -968,192 +657,12 @@ void MapView::createGUI()
 {
   // create main gui object that holds all other gui elements for access ( in the future ;) )
   mainGui = new UIMapViewGUI(this);
-  mainGui->guiCurrentTexture->current_texture->setClickFunc(view_texture_palette, 0);
+  mainGui->guiCurrentTexture->current_texture->setClickFunc ([] { mainGui->TexturePalette->toggleVisibility(); });
 
   mainGui->ZoneIDBrowser->setMapID(gWorld->getMapID());
   mainGui->ZoneIDBrowser->setChangeFunc(changeZoneIDValue);
   tool_settings_x = video.xres() - 186;
-  tool_settings_y = 38;
-
-
-  // Raise/Lower
-#ifdef _WIN32
-  if (app.tabletActive && Settings::getInstance()->tabletMode)
-    setting_ground = new UIWindow((float)tool_settings_x, (float)tool_settings_y, 180.0f, 240.0f);
-  else
-#endif
-    setting_ground = new UIWindow((float)tool_settings_x, (float)tool_settings_y, 180.0f, 160.0f);
-
-  setting_ground->movable(true);
-  mainGui->addChild(setting_ground);
-
-  setting_ground->addChild(new UIText(78.5f, 2.0f, "Raise / Lower", app.getArial14(), eJustifyCenter));
-
-  gGroundToggleGroup = new UIToggleGroup(&Environment::getInstance()->groundBrushType);
-  setting_ground->addChild(new UICheckBox(6.0f, 15.0f, "Flat", gGroundToggleGroup, 0));
-  setting_ground->addChild(new UICheckBox(85.0f, 15.0f, "Linear", gGroundToggleGroup, 1));
-  setting_ground->addChild(new UICheckBox(6.0f, 40.0f, "Smooth", gGroundToggleGroup, 2));
-  setting_ground->addChild(new UICheckBox(85.0f, 40.0f, "Polynomial", gGroundToggleGroup, 3));
-  setting_ground->addChild(new UICheckBox(6.0f, 65.0f, "Trigonom", gGroundToggleGroup, 4));
-  setting_ground->addChild(new UICheckBox(85.0f, 65.0f, "Quadratic", gGroundToggleGroup, 5));
-  gGroundToggleGroup->Activate(1);
-
-  ground_brush_radius = new UISlider(6.0f, 120.0f, 167.0f, 1000.0f, 0.00001f);
-  ground_brush_radius->setFunc(setGroundBrushRadius);
-  ground_brush_radius->setValue(groundBrushRadius / 1000);
-  ground_brush_radius->setText("Brush radius: ");
-  setting_ground->addChild(ground_brush_radius);
-
-  ground_brush_speed = new UISlider(6.0f, 145.0f, 167.0f, 10.0f, 0.00001f);
-  ground_brush_speed->setFunc(setGroundBrushSpeed);
-  ground_brush_speed->setValue(groundBrushSpeed / 10);
-  ground_brush_speed->setText("Brush Speed: ");
-  setting_ground->addChild(ground_brush_speed);
-
-#ifdef _WIN32
-  if (app.tabletActive && Settings::getInstance()->tabletMode)
-  {
-    setting_ground->addChild(new UIText(78.5f, 170.0f, "Tablet Control", app.getArial14(), eJustifyCenter));
-
-    gGroundTabletControl = new UIToggleGroup(&groundTabletControlSelect);
-    setting_ground->addChild(new UICheckBox(6.0f, 182.0f, "Off", gGroundTabletControl, 0));
-    setting_ground->addChild(new UICheckBox(85.0f, 182.0f, "On", gGroundTabletControl, 1));
-    gGroundTabletControl->Activate(1);
-
-    gGroundTabletActiveGroup = new UIToggleGroup(&groundTabletSelect);
-    setting_ground->addChild(new UICheckBox(6.0f, 207.0f, "Radius", gGroundTabletActiveGroup, 0));
-    setting_ground->addChild(new UICheckBox(85.0f, 207.0f, "Speed", gGroundTabletActiveGroup, 1));
-    gGroundTabletActiveGroup->Activate(1);
-  }
-#endif
-
-  // shader
-#ifdef _WIN32
-  if (app.tabletActive && Settings::getInstance()->tabletMode)
-    settings_shader = new UIWindow((float)tool_settings_x, (float)tool_settings_y, 180.0f, 200.0f);
-  else
-#endif
-    settings_shader = new UIWindow((float)tool_settings_x, (float)tool_settings_y, 180.0f, 160.0f);
-  settings_shader->movable(true);
-  settings_shader->hide();
-  mainGui->addChild(settings_shader);
-
-  settings_shader->addChild(new UIText(78.5f, 2.0f, "Shader", app.getArial14(), eJustifyCenter));
-
-  shader_radius = new UISlider(6.0f, 33.0f, 167.0f, 1000.0f, 0.00001f);
-  shader_radius->setFunc(SetShaderRadius);
-  shader_radius->setValue(shaderRadius / 1000);
-  shader_radius->setText("Radius: ");
-  settings_shader->addChild(shader_radius);
-
-  shader_speed = new UISlider(6.0f, 59.0f, 167.0f, 10.0f, 0.00001f);
-  shader_speed->setFunc(SetShaderSpeed);
-  shader_speed->setValue(shaderSpeed / 10.0f);
-  shader_speed->setText("Speed: ");
-  settings_shader->addChild(shader_speed);
-
-  shader_red = new UISlider(6.0f, 85.0f, 167.0f, 2.0f, 0.00001f);
-  shader_red->setFunc(SetShaderRed);
-  shader_red->setValue(shaderRed / 2.0f);
-  shader_red->setText("Red: ");
-  settings_shader->addChild(shader_red);
-
-  shader_green = new UISlider(6.0f, 111.0f, 167.0f, 2.0f, 0.00001f);
-  shader_green->setFunc(SetShaderGreen);
-  shader_green->setValue(shaderGreen / 2.0f);
-  shader_green->setText("Green: ");
-  settings_shader->addChild(shader_green);
-
-  shader_blue = new UISlider(6.0f, 137.0f, 167.0f, 2.0f, 0.00001f);
-  shader_blue->setFunc(SetShaderBlue);
-  shader_blue->setValue(shaderBlue / 2.0f);
-  shader_blue->setText("Blue: ");
-  settings_shader->addChild(shader_blue);
-#ifdef _WIN32
-  if (app.tabletActive && Settings::getInstance()->tabletMode)
-  {
-    settings_shader->addChild(new UIText(78.5f, 137.0f, "Tablet Control", app.getArial14(), eJustifyCenter));
-
-    gShaderTabletControl = new UIToggleGroup(&shaderTabletControlSelect);
-    settings_shader->addChild(new UICheckBox(6.0f, 151.0f, "Off", gShaderTabletControl, 0));
-    settings_shader->addChild(new UICheckBox(85.0f, 151.0f, "On", gShaderTabletControl, 1));
-    gShaderTabletControl->Activate(0);
-  }
-#endif
-
-  // flatten/blur
-  setting_blur = new UIWindow((float)tool_settings_x, (float)tool_settings_y, 180.0f, 400.0f);
-  setting_blur->movable(true);
-  setting_blur->hide();
-  mainGui->addChild(setting_blur);
-
-  setting_blur->addChild(new UIText(78.5f, 2.0f, "Flatten / Blur", app.getArial14(), eJustifyCenter));
-
-  gBlurToggleGroup = new UIToggleGroup(&blurBrushType);
-  setting_blur->addChild(new UICheckBox(6.0f, 15.0f, "Flat", gBlurToggleGroup, 0));
-  setting_blur->addChild(new UICheckBox(80.0f, 15.0f, "Linear", gBlurToggleGroup, 1));
-  setting_blur->addChild(new UICheckBox(6.0f, 40.0f, "Smooth", gBlurToggleGroup, 2));
-  gBlurToggleGroup->Activate(1);
-
-  blur_brush = new UISlider(6.0f, 85.0f, 167.0f, 1000.0f, 0.00001f);
-  blur_brush->setFunc(setBlurBrushRadius);
-  blur_brush->setValue(blurBrushRadius / 1000);
-  blur_brush->setText("Brush radius: ");
-  setting_blur->addChild(blur_brush);
-
-  ground_blur_speed = new UISlider(6.0f, 110.0f, 167.0f, 10.0f, 0.00001f);
-  ground_blur_speed->setFunc(setBlurBrushSpeed);
-  ground_blur_speed->setValue(groundBlurSpeed / 10);
-  ground_blur_speed->setText("Brush Speed: ");
-  setting_blur->addChild(ground_blur_speed);
-
-  setting_blur->addChild(new UIText(5.0f, 130.0f, "Flatten options:", app.getArial14(), eJustifyLeft));
-
-  toggle_flatten = new UICheckBox(6.0f, 150.0f, "Flatten Angle", toggleFlattenAngle, 0);
-  toggle_flatten->setState(Environment::getInstance()->flattenAngleEnabled);
-  setting_blur->addChild(toggle_flatten);
-
-  flatten_angle = new UISlider(6.0f, 190.0f, 167.0f, 90.0f, 0.00001f);
-  flatten_angle->setValue(flattenAngle / 10);
-  flatten_angle->setText("Angle: ");
-  flatten_angle->setFunc(setFlattenAngle);
-  setting_blur->addChild(flatten_angle);
-
-  flatten_orientation = new UISlider(6.0f, 220.0f, 167.0f, 360.0f, 0.00001f);
-  flatten_orientation->setValue(flattenOrientation / 10);
-  flatten_orientation->setText("Orientation: ");
-  flatten_orientation->setFunc(setFlattenOrientation);
-  setting_blur->addChild(flatten_orientation);
-
-  toggle_flatten_relative = new UICheckBox(5.0f, 235.0f, "flatten relative to:", toggleFlattenLock, 0);
-  toggle_flatten_relative->setState(flattenRelativeMode);
-  setting_blur->addChild(toggle_flatten_relative);
-
-  setting_blur->addChild(new UIText(5.0f, 265.0f, "X:", app.getArial12(), eJustifyLeft));
-  flatten_relative_x = new UITextBox(50.0f, 265.0f, 100.0f, 30.0f, app.getArial12(), updateFlattenRelativeX);
-  flatten_relative_x->value(misc::floatToStr(flattenRelativePos.x));
-  setting_blur->addChild(flatten_relative_x);
-
-  setting_blur->addChild(new UIText(5.0f, 285.0f, "Z:", app.getArial12(), eJustifyLeft));
-  flatten_relative_z = new UITextBox(50.0f, 285.0f, 100.0f, 30.0f, app.getArial12(), updateFlattenRelativeZ);
-  flatten_relative_z->value(misc::floatToStr(flattenRelativePos.z));
-  setting_blur->addChild(flatten_relative_z);
-
-  setting_blur->addChild(new UIText(5.0f, 305.0f, "Height:", app.getArial12(), eJustifyLeft));
-  flatten_relative_y = new UITextBox(50.0f, 305.0f, 100.0f, 30.0f, app.getArial12(), updateFlattenRelativeY);
-  flatten_relative_y->value(misc::floatToStr(flattenRelativePos.y));
-  setting_blur->addChild(flatten_relative_y);
-
-  setting_blur->addChild(new UIText(5.0f, 330.0, "Flatten Type:", app.getArial14(), eJustifyLeft));
-
-  gFlattenTypeGroup = new UIToggleGroup(&flattenType);
-
-  setting_blur->addChild(new UICheckBox(5.0f, 345.0f, "Raise/Lower", gFlattenTypeGroup, eFlattenMode_Both));
-  setting_blur->addChild(new UICheckBox(105.0f, 345.0f, "Raise", gFlattenTypeGroup, eFlattenMode_Raise));
-  setting_blur->addChild(new UICheckBox(5.0f, 370.0f, "Lower", gFlattenTypeGroup, eFlattenMode_Lower));
-
-  gFlattenTypeGroup->Activate(flattenType);
-
+  tool_settings_y = 38; 
 
   //3D Paint settings UIWindow
   settings_paint = new UIWindow((float)tool_settings_x, (float)tool_settings_y, 180.0f, 280.0f);
@@ -1174,7 +683,7 @@ void MapView::createGUI()
   mainGui->G1->setMinColor(0.0f, 0.0f, 0.0f, 1.0f);
   mainGui->G1->horiz = false;
   mainGui->G1->setClickColor(1.0f, 0.0f, 0.0f, 1.0f);
-  mainGui->G1->setClickFunc(setTextureBrushLevel);
+  mainGui->G1->setClickFunc ([] (float f) { brushLevel = (1.0f - f)*255.0f; });
   mainGui->G1->setValue(0.0f);
 
   settings_paint->addChild(mainGui->G1);
@@ -1218,10 +727,19 @@ void MapView::createGUI()
   settings_paint->addChild(spray_pressure);
 
   UIButton* B1;
-  B1 = new UIButton(6.0f, 230.0f, 170.0f, 30.0f, "Texture swapper", "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp", "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp", openSwapper, 1);
+  B1 = new UIButton(6.0f, 230.0f, 170.0f, 30.0f, "Texture swapper", "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp", "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp", []
+                   {
+                     mainGui->TextureSwitcher->show();
+                     settings_paint->hide();
+                   });
   settings_paint->addChild(B1);
 
-  UIButton* rmDup = new UIButton(6.0f, 255.0f, 170.0f, 30.0f, "Remove texture duplicates", "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp", "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp", removeTexDuplicateOnADT, 0);
+  UIButton* rmDup = new UIButton( 6.0f, 255.0f, 170.0f, 30.0f
+                                , "Remove texture duplicates"
+                                , "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp"
+                                , "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp"
+                                , [] { gWorld->removeTexDuplicateOnADT(gWorld->camera.x, gWorld->camera.z); }
+                                );
   settings_paint->addChild(rmDup);
 
   mainGui->addChild(mainGui->TexturePalette = UITexturingGUI::createTexturePalette(mainGui));
@@ -1242,74 +760,241 @@ void MapView::createGUI()
   mbar->AddMenu("Assist");
   mbar->AddMenu("Help");
 
-  // mbar->GetMenu( "File" )->AddMenuItemButton( "CTRL+SHIFT+S Save current", SaveOrReload, 0 );
-  mbar->GetMenu("File")->AddMenuItemButton("CTRL+S Save", SaveOrReload, 2);
-  // mbar->GetMenu( "File" )->AddMenuItemButton( "SHIFT+J Reload tile", SaveOrReload, 1 );
+  // mbar->GetMenu( "File" )->AddMenuItemButton( "CTRL+SHIFT+S Save current", [] { gWorld->mapIndex->saveTile(tile_index(gWorld->camera)); });
+  mbar->GetMenu("File")->AddMenuItemButton("CTRL+S Save", [] { gWorld->mapIndex->saveChanged(); });
+  addHotkey (SDLK_s, MOD_ctrl, [this] { save(); });
+  addHotkey (SDLK_s, MOD_meta, [this] { save(); });
+  // mbar->GetMenu( "File" )->AddMenuItemButton( "SHIFT+J Reload tile", [] { gWorld->mapIndex->reloadTile(tile_index(gWorld->camera)); });
   //  mbar->GetMenu( "File" )->AddMenuItemSeperator( "Import and Export" );
   // mbar->GetMenu( "File" )->AddMenuItemButton( "Export heightmap", exportPNG, 1 );
   // mbar->GetMenu( "File" )->AddMenuItemButton( "Import heightmap", importPNG, 1 );
   mbar->GetMenu("File")->AddMenuItemSeperator(" ");
-  mbar->GetMenu("File")->AddMenuItemButton("ESC Exit", SaveOrReload, 3);
-
-  //  mbar->GetMenu( "File" )->AddMenuItemSeperator( "Test" );
-  //mbar->GetMenu( "File" )->AddMenuItemButton( "AreaID", test_menu_action, 1 );
+  mbar->GetMenu("File")->AddMenuItemButton("ESC Exit", [] { mainGui->escWarning->show(); });
+  addHotkey (SDLK_ESCAPE, MOD_none, [this] { quitask(); });
 
   mbar->GetMenu("Edit")->AddMenuItemSeperator("selected object");
-  mbar->GetMenu("Edit")->AddMenuItemButton("DEL delete", DeleteSelectedObject, 0);
-  mbar->GetMenu("Edit")->AddMenuItemButton("CTRL + R reset rotation", ResetSelectedObjectRotation, 0);
-  mbar->GetMenu("Edit")->AddMenuItemButton("PAGE DOWN set to ground", SnapSelectedObjectToGround, 0);
+  mbar->GetMenu("Edit")->AddMenuItemButton("DEL delete", DeleteSelectedObject);
+  mbar->GetMenu("Edit")->AddMenuItemButton("CTRL + R reset rotation", ResetSelectedObjectRotation);
+  mbar->GetMenu("Edit")->AddMenuItemButton("PAGE DOWN set to ground", SnapSelectedObjectToGround);
 
   mbar->GetMenu("Edit")->AddMenuItemSeperator("Options");
   mbar->GetMenu("Edit")->AddMenuItemToggle("Auto select mode", &Settings::getInstance()->AutoSelectingMode, false);
 
 
   mbar->GetMenu("Assist")->AddMenuItemSeperator("Model");
-  mbar->GetMenu("Assist")->AddMenuItemButton("Last M2 from MV", InsertObject, 14);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Last WMO from MV", InsertObject, 15);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Helper models", showHelperModels, 2);
+  mbar->GetMenu("Assist")->AddMenuItemButton("Last M2 from MV", [] { InsertObject (14); });
+  mbar->GetMenu("Assist")->AddMenuItemButton("Last WMO from MV", [] { InsertObject (15); });
+  mbar->GetMenu("Assist")->AddMenuItemButton("Helper models", [] { mainGui->HelperModels->show(); });
   mbar->GetMenu("Assist")->AddMenuItemSeperator("ADT");
-  mbar->GetMenu("Assist")->AddMenuItemButton("Set Area ID", adtSetAreaID, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Clear height map", clearHeightmap, 0);
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Set Area ID"
+                                             , []
+                                               {
+                                                 if (Environment::getInstance()->selectedAreaID)
+                                                 {
+                                                   gWorld->setAreaID(gWorld->camera.x, gWorld->camera.z, Environment::getInstance()->selectedAreaID, true);
+                                                 }
+                                               }
+                                             );
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Clear height map"
+                                             , []
+                                               {
+                                                 if (Environment::getInstance()->selectedAreaID)
+                                                 {
+                                                   gWorld->clearHeight(gWorld->camera.x, gWorld->camera.z);
+                                                 }
+                                               }
+                                             );
 
-  mbar->GetMenu("Assist")->AddMenuItemButton("Clear texture", clearTexture, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Clear models", clearAllModels, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Clear duplicate models", ClearDupModels, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Clear water", menuWater, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Create water", menuWater, 1);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Fix gaps (all loaded adts)", funcAllFix, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Clear standard shader", ClearShader, 0);
-  mbar->GetMenu("Assist")->AddMenuItemButton("Map to big alpha", toBigAlpha, 0);
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Clear texture"
+                                             , [] { gWorld->setBaseTexture(gWorld->camera.x, gWorld->camera.z); }
+                                             );
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Clear models"
+                                             , [] { gWorld->clearAllModelsOnADT(tile_index(gWorld->camera)); }
+                                             );
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Clear duplicate models"
+                                             , [] { gWorld->delete_duplicate_model_and_wmo_instances(); }
+                                             );
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Clear water"
+                                             , [] { gWorld->deleteWaterLayer(tile_index(gWorld->camera)); }
+                                             );
+  mbar->GetMenu("Assist")->AddMenuItemButton ( "Create water"
+                                             , [] { gWorld->addWaterLayer(tile_index(gWorld->camera)); }
+                                             );
+  mbar->GetMenu("Assist")->AddMenuItemButton("Fix gaps (all loaded adts)", [] { gWorld->fixAllGaps(); });
+  mbar->GetMenu("Assist")->AddMenuItemButton("Clear standard shader", [] { gWorld->ClearShader(tile_index(gWorld->camera)); });
+  mbar->GetMenu("Assist")->AddMenuItemButton("Map to big alpha", [] { gWorld->convertMapToBigAlpha(); });
 
   mbar->GetMenu("View")->AddMenuItemSeperator("Windows");
   mbar->GetMenu("View")->AddMenuItemToggle("Toolbar", mainGui->guiToolbar->hidden_evil(), true);
 
   mbar->GetMenu("View")->AddMenuItemToggle("Texture palette", mainGui->TexturePalette->hidden_evil(), true);
-  mbar->GetMenu("View")->AddMenuItemButton("Cursor options", showCursorSwitcher, 0);
+  mbar->GetMenu("View")->AddMenuItemButton("Cursor options", [] { mainGui->showCursorSwitcher(); });
   mbar->GetMenu("View")->AddMenuItemSeperator("Toggle");
   mbar->GetMenu("View")->AddMenuItemToggle("F1 M2s", &gWorld->drawmodels);
+  addHotkey (SDLK_F1, MOD_none, [] { gWorld->drawmodels = !gWorld->drawmodels; });
   mbar->GetMenu("View")->AddMenuItemToggle("F2 WMO doodadsets", &gWorld->drawdoodads);
+  addHotkey (SDLK_F2, MOD_none, [] { gWorld->drawdoodads = !gWorld->drawdoodads; });
   mbar->GetMenu("View")->AddMenuItemToggle("F3 Terrain", &gWorld->drawterrain);
+  addHotkey (SDLK_F3, MOD_none, [] { gWorld->drawterrain = !gWorld->drawterrain; });
   mbar->GetMenu("View")->AddMenuItemToggle("F4 Water", &gWorld->drawwater);
+  addHotkey (SDLK_F4, MOD_none, [] { gWorld->drawwater = !gWorld->drawwater; });
   mbar->GetMenu("View")->AddMenuItemToggle("F6 WMOs", &gWorld->drawwmo);
+  addHotkey (SDLK_F6, MOD_none, [] { gWorld->drawwmo = !gWorld->drawwmo; });
   mbar->GetMenu("View")->AddMenuItemToggle("F7 Lines", &gWorld->drawlines);
+  addHotkey (SDLK_F7, MOD_none, [] { gWorld->drawlines = !gWorld->drawlines; });
   mbar->GetMenu("View")->AddMenuItemToggle("F8 Detail infos", mainGui->guidetailInfos->hidden_evil(), true);
+  addHotkey (SDLK_F8, MOD_none, [this] { mainGui->guidetailInfos->toggleVisibility(); });
   mbar->GetMenu("View")->AddMenuItemToggle("F9 Map contour infos", &DrawMapContour);
+  addHotkey (SDLK_F9, MOD_none, [] { DrawMapContour = !DrawMapContour; });
   mbar->GetMenu("View")->AddMenuItemToggle("F11 Toggle Animation", &gWorld->renderAnimations);
+  addHotkey (SDLK_F11, MOD_none, [] { gWorld->renderAnimations = !gWorld->renderAnimations; });
+  mbar->GetMenu("View")->AddMenuItemToggle("Flight Bounds", &gWorld->draw_mfbo);
   mbar->GetMenu("View")->AddMenuItemToggle("F Fog", &gWorld->drawfog);
-  mbar->GetMenu("View")->AddMenuItemToggle("Hole lines always on", &Settings::getInstance()->holelinesOn, false);
+  mbar->GetMenu("View")->AddMenuItemToggle("Hole lines always on", &Environment::getInstance()->view_holelines, false);
   mbar->GetMenu("View")->AddMenuItemToggle("Wireframe", &gWorld->drawwireframe);
   mbar->GetMenu("View")->AddMenuItemToggle("Models with box", &Settings::getInstance()->renderModelsWithBox);
 
-  mbar->GetMenu("Help")->AddMenuItemButton("Key Bindings F10", openHelp, 0);
-  mbar->GetMenu("Help")->AddMenuItemButton("Manual online", openURL, 2);
-  mbar->GetMenu("Help")->AddMenuItemButton("Homepage", openURL, 1);
+  mbar->GetMenu("Help")->AddMenuItemButton("Key Bindings F10", [] { mainGui->showHelp(); });
+  mbar->GetMenu("Help")->AddMenuItemButton("Manual online", [] { openURL (2); });
+  mbar->GetMenu("Help")->AddMenuItemButton("Homepage", [] { openURL (1); });
 
   mainGui->addChild(mbar);
 
+  addHotkey (SDLK_m, MOD_none, [this] { mainGui->minimapWindow->toggleVisibility(); });
 
-  addHotkey(SDLK_ESCAPE, MOD_none, static_cast<AppState::Function>(&MapView::quitask));
-  addHotkey(SDLK_s, MOD_ctrl, static_cast<AppState::Function>(&MapView::save));
-  addHotkey(SDLK_s, MOD_meta, static_cast<AppState::Function>(&MapView::save));
+  addHotkey ( SDLK_F1
+            , MOD_shift
+            , []
+              {
+                if (alloff)
+                {
+                  alloff_models = gWorld->drawmodels;
+                  alloff_doodads = gWorld->drawdoodads;
+                  alloff_contour = DrawMapContour;
+                  alloff_wmo = gWorld->drawwmo;
+                  alloff_fog = gWorld->drawfog;
+                  alloff_terrain = gWorld->drawterrain;
+
+                  gWorld->drawmodels = false;
+                  gWorld->drawdoodads = false;
+                  DrawMapContour = true;
+                  gWorld->drawwmo = false;
+                  gWorld->drawterrain = true;
+                  gWorld->drawfog = false;
+                }
+                else
+                {
+                  gWorld->drawmodels = alloff_models;
+                  gWorld->drawdoodads = alloff_doodads;
+                  DrawMapContour = alloff_contour;
+                  gWorld->drawwmo = alloff_wmo;
+                  gWorld->drawterrain = alloff_terrain;
+                  gWorld->drawfog = alloff_fog;
+                }
+                alloff = !alloff;
+              }
+            );
+
+  addHotkey ( SDLK_F5
+            , MOD_none
+            , [this]
+              {
+                std::ofstream f("bookmarks.txt", std::ios_base::app);
+                f << gWorld->getMapID() << " " << gWorld->camera.x << " " << gWorld->camera.y << " " << gWorld->camera.z << " " << ah << " " << av << " " << gWorld->getAreaID() << std::endl;
+              }
+            );
+
+  addHotkey (SDLK_PAGEDOWN, MOD_none, [] { SnapSelectedObjectToGround(); });
+
+  addHotkey (SDLK_n, MOD_none, [this] { mTimespeed += 90.0f; });
+  addHotkey (SDLK_b, MOD_none, [this] { mTimespeed = std::max (0.0f, mTimespeed - 90.0f); });
+  addHotkey (SDLK_j, MOD_none, [this] { mTimespeed = 0.0f; });
+
+  addHotkey (SDLK_l, MOD_none, [] { gWorld->lighting = !gWorld->lighting; });
+
+  addHotkey (SDLK_TAB, MOD_none, [this] { _GUIDisplayingEnabled = !_GUIDisplayingEnabled; });
+
+  addHotkey (SDLK_DELETE, MOD_none, [] { DeleteSelectedObject(); });
+
+  addHotkey (SDLK_v, MOD_shift, [] { InsertObject (14); });
+  addHotkey (SDLK_v, MOD_alt, [] { InsertObject (15); });
+  addHotkey (SDLK_v, MOD_ctrl, [] { mainGui->objectEditor->pasteObject(); });
+  addHotkey ( SDLK_v
+            , MOD_none
+            , [] { mainGui->objectEditor->pasteObject(); }
+            , [] { return terrainMode == 9; }
+            );
+
+  addHotkey ( SDLK_x
+            , MOD_none
+            , [] { mainGui->TexturePalette->toggleVisibility(); }
+            , [] { return terrainMode == 2; }
+            );
+
+  addHotkey (SDLK_F4, MOD_shift, [] { Settings::getInstance()->AutoSelectingMode = !Settings::getInstance()->AutoSelectingMode; });
+  addHotkey (SDLK_F7, MOD_shift, [] { Environment::getInstance()->view_holelines = !Environment::getInstance()->view_holelines; });
+
+  addHotkey (SDLK_x, MOD_ctrl, [] { mainGui->guidetailInfos->toggleVisibility(); });
+
+  addHotkey (SDLK_i, MOD_none, [this] { mousedir *= -1.f; });
+
+  addHotkey (SDLK_i, MOD_ctrl, [] { Environment::getInstance()->paintMode = !Environment::getInstance()->paintMode; });
+
+  addHotkey (SDLK_o, MOD_none, [this] { movespd *= 0.5f; });
+  addHotkey (SDLK_p, MOD_none, [this] { movespd *= 2.0f; });
+
+  addHotkey (SDLK_p, MOD_shift | MOD_ctrl, [] { Saving = true; });
+
+  addHotkey (SDLK_r, MOD_none, [this] { ah += 180.f; });
+  addHotkey (SDLK_r, MOD_ctrl, [] { ResetSelectedObjectRotation(); });
+
+  addHotkey ( SDLK_g
+            , MOD_none
+            , []
+              {
+                // write teleport cords to txt file
+                std::ofstream f("ports.txt", std::ios_base::app);
+                f << "Map: " << gAreaDB.getAreaName(gWorld->getAreaID()) << " on ADT " << std::floor(gWorld->camera.x / TILESIZE) << " " << std::floor(gWorld->camera.z / TILESIZE) << std::endl;
+                f << "Trinity:" << std::endl << ".go " << (ZEROPOINT - gWorld->camera.z) << " " << (ZEROPOINT - gWorld->camera.x) << " " << gWorld->camera.y << " " << gWorld->getMapID() << std::endl;
+                f << "ArcEmu:" << std::endl << ".worldport " << gWorld->getMapID() << " " << (ZEROPOINT - gWorld->camera.z) << " " << (ZEROPOINT - gWorld->camera.x) << " " << gWorld->camera.y << " " << std::endl << std::endl;
+                f.close();
+              }
+            );
+
+  addHotkey ( SDLK_y
+            , MOD_none
+            , [] { mainGui->terrainTool->nextType(); }
+            , [] { return terrainMode == 0; }
+            );
+
+  addHotkey ( SDLK_y
+            , MOD_none
+            , [] { mainGui->flattenTool->nextFlattenMode(); }
+            , [] { return terrainMode == 1; }
+            );
+
+  addHotkey ( SDLK_u
+            , MOD_none
+            , [this]
+              {
+                if (mViewMode == eViewMode_2D)
+                {
+                  mViewMode = eViewMode_3D;
+                  terrainMode = saveterrainMode;
+                  // Set the right icon in toolbar
+                  mainGui->guiToolbar->IconSelect(terrainMode);
+                }
+                else
+                {
+                  mViewMode = eViewMode_2D;
+                  saveterrainMode = terrainMode;
+                  terrainMode = 2;
+                  // Set the right icon in toolbar
+                  mainGui->guiToolbar->IconSelect(terrainMode);
+                }
+              }
+            );
+
 
   // ESC warning
   mainGui->escWarning = new UIExitWarning(this);
@@ -1317,12 +1002,12 @@ void MapView::createGUI()
   mainGui->addChild(mainGui->escWarning);
 
   // CAPS warning
-  mainGui->capsWarning = new UICapsWarning(this);
+  mainGui->capsWarning = new UICapsWarning;
   mainGui->capsWarning->hide();
   mainGui->addChild(mainGui->capsWarning);
 
   // Water unable to save warning
-  mainGui->waterSaveWarning = new UIWaterSaveWarning(this);
+  mainGui->waterSaveWarning = new UIWaterSaveWarning;
   mainGui->waterSaveWarning->hide();
   mainGui->addChild(mainGui->waterSaveWarning);
 
@@ -1410,40 +1095,16 @@ void MapView::tick(float t, float dt)
     switch (terrainMode)
     {
     case 0:
-      switch (groundTabletSelect)
-      {
-      case 0:
-        if (groundTabletControlSelect == 1)
-        {
-          groundBrushRadius = std::max(0.0f, std::min(1000.0f, (float)app.pressure / 20.48f));
-          ground_brush_radius->setValue(groundBrushRadius / 1000.0f);
-        }
-        break;
-      case 1:
-        if (groundTabletControlSelect == 1)
-        {
-          groundBrushSpeed = std::max(0.0f, std::min(10.0f, (float)app.pressure / 204.8f));
-          ground_brush_speed->setValue(groundBrushSpeed / 10.0f);
-        }
-        break;
-      }
-      break;
-
+      mainGui->terrainTool->setTabletControlValue((float)app.pressure);
     case 1:
-      blurBrushRadius = std::max(0.0f, std::min(1000.0f, (float)app.pressure / 20.0f));
-      blur_brush->setValue(blurBrushRadius / 1000.0f);
+      mainGui->flattenTool->setRadius((float)app.pressure / 20.0f);
       break;
     case 2:
       mainGui->paintPressureSlider->setValue(std::max(0.0f, std::min(1.0f, (float)app.pressure / 2048.0f)));
       mainGui->paintPressureSlider->setValue(mainGui->paintPressureSlider->value);
       break;
     case 8:
-      if (shaderTabletControlSelect == 1)
-      {
-        shaderRadius = std::max(0.0f, std::min(1000.0f, (float)app.pressure / 20.48f));
-        shader_radius->setValue(shaderRadius / 1000.0f);
-      }
-
+      mainGui->shaderTool->setTabletControlValue((float)app.pressure);
       break;
     }
   }
@@ -1457,13 +1118,13 @@ void MapView::tick(float t, float dt)
     math::rotate(0.0f, 0.0f, &dir.x, &dir.y, math::degrees(av));
     math::rotate(0.0f, 0.0f, &dir.x, &dir.z, math::degrees(ah));
 
-    if (Environment::getInstance()->ShiftDown)
+    if (_mod_shift_down)
     {
       dirUp.x = 0.0f;
       dirUp.y = 1.0f;
       dirRight *= 0.0f; //! \todo  WAT?
     }
-    else if (Environment::getInstance()->CtrlDown)
+    else if (_mod_ctrl_down)
     {
       dirUp.x = 0.0f;
       dirUp.y = 1.0f;
@@ -1489,9 +1150,9 @@ void MapView::tick(float t, float dt)
       bool canMoveObj = !mainGui->rotationEditor->hasFocus();
 
       // Set move scale and rotate for numpad keys
-      if (Environment::getInstance()->CtrlDown && Environment::getInstance()->ShiftDown)  moveratio = 0.1f;
-      else if (Environment::getInstance()->ShiftDown) moveratio = 0.01f;
-      else if (Environment::getInstance()->CtrlDown) moveratio = 0.005f;
+      if (_mod_ctrl_down && _mod_shift_down)  moveratio = 0.1f;
+      else if (_mod_shift_down) moveratio = 0.01f;
+      else if (_mod_ctrl_down) moveratio = 0.005f;
       else moveratio = 0.001f;
 
       if (canMoveObj && (keyx != 0 || keyy != 0 || keyz != 0 || keyr != 0 || keys != 0))
@@ -1531,7 +1192,7 @@ void MapView::tick(float t, float dt)
         ObjPos = boost::get<selected_model_type> (*Selection)->pos - gWorld->camera;
         math::rotate(0.0f, 0.0f, &ObjPos.x, &ObjPos.y, math::degrees(av));
         math::rotate(0.0f, 0.0f, &ObjPos.x, &ObjPos.z, math::degrees(ah));
-        ObjPos.x = abs(ObjPos.x);
+        ObjPos.x = std::abs(ObjPos.x);
       }
 
       // moving and scaling objects
@@ -1543,7 +1204,7 @@ void MapView::tick(float t, float dt)
         {
           gWorld->updateTilesWMO(boost::get<selected_wmo_type> (*Selection));
 
-          if (Environment::getInstance()->ShiftDown)
+          if (_mod_shift_down)
           {
             boost::get<selected_wmo_type> (*Selection)->pos += mv * dirUp * ObjPos.x;
             boost::get<selected_wmo_type> (*Selection)->pos -= mh * dirRight * ObjPos.x;
@@ -1569,7 +1230,7 @@ void MapView::tick(float t, float dt)
         else if (Selection->which() == eEntry_Model)
         {
           gWorld->updateTilesModel(boost::get<selected_model_type> (*Selection));
-          if (Environment::getInstance()->AltDown)
+          if (_mod_alt_down)
           {
             float ScaleAmount = pow(2.0f, mv * 4.0f);
 
@@ -1581,7 +1242,7 @@ void MapView::tick(float t, float dt)
           }
           else
           {
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
               boost::get<selected_model_type> (*Selection)->pos += mv * dirUp * ObjPos.x;
               boost::get<selected_model_type> (*Selection)->pos -= mh * dirRight * ObjPos.x;
@@ -1617,23 +1278,23 @@ void MapView::tick(float t, float dt)
 
         if (Selection->which() == eEntry_Model)
         {
-          lModify = Environment::getInstance()->ShiftDown | Environment::getInstance()->CtrlDown | Environment::getInstance()->AltDown;
-          if (Environment::getInstance()->ShiftDown)
+          lModify = _mod_shift_down | _mod_ctrl_down | _mod_alt_down;
+          if (_mod_shift_down)
             lTarget = &boost::get<selected_model_type> (*Selection)->dir.y;
-          else if (Environment::getInstance()->CtrlDown)
+          else if (_mod_ctrl_down)
             lTarget = &boost::get<selected_model_type> (*Selection)->dir.x;
-          else if (Environment::getInstance()->AltDown)
+          else if (_mod_alt_down)
             lTarget = &boost::get<selected_model_type> (*Selection)->dir.z;
 
         }
         else if (Selection->which() == eEntry_WMO)
         {
-          lModify = Environment::getInstance()->ShiftDown | Environment::getInstance()->CtrlDown | Environment::getInstance()->AltDown;
-          if (Environment::getInstance()->ShiftDown)
+          lModify = _mod_shift_down | _mod_ctrl_down | _mod_alt_down;
+          if (_mod_shift_down)
             lTarget = &boost::get<selected_wmo_type> (*Selection)->dir.y;
-          else if (Environment::getInstance()->CtrlDown)
+          else if (_mod_ctrl_down)
             lTarget = &boost::get<selected_wmo_type> (*Selection)->dir.x;
-          else if (Environment::getInstance()->AltDown)
+          else if (_mod_alt_down)
             lTarget = &boost::get<selected_wmo_type> (*Selection)->dir.z;
 
         }
@@ -1685,53 +1346,31 @@ void MapView::tick(float t, float dt)
         case 0:
           if (mViewMode == eViewMode_3D && !underMap)
           {
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
-              gWorld->changeTerrain(xPos, zPos, 7.5f * dt * groundBrushSpeed, groundBrushRadius, Environment::getInstance()->groundBrushType);
+              mainGui->terrainTool->changeTerrain(7.5f * dt);
             }
-            else if (Environment::getInstance()->CtrlDown)
+            else if (_mod_ctrl_down)
             {
-              gWorld->changeTerrain(xPos, zPos, -7.5f * dt * groundBrushSpeed, groundBrushRadius, Environment::getInstance()->groundBrushType);
+              mainGui->terrainTool->changeTerrain(-7.5f * dt);
             }
           }
           break;
         case 1:
           if (mViewMode == eViewMode_3D && !underMap)
           {
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
-              if (flattenRelativeMode)
-              {
-                if (Environment::getInstance()->flattenAngleEnabled)
-                {
-                  gWorld->flattenTerrain(xPos, zPos, pow(0.5f, dt * groundBlurSpeed), blurBrushRadius, blurBrushType, flattenType, flattenRelativePos, flattenAngle, flattenOrientation);
-                }
-                else
-                {
-                  gWorld->flattenTerrain(xPos, zPos, pow(0.5f, dt * groundBlurSpeed), blurBrushRadius, blurBrushType, flattenType, flattenRelativePos);
-                }
-              }
-              else
-              {
-                if (Environment::getInstance()->flattenAngleEnabled)
-                {
-                  gWorld->flattenTerrain(xPos, zPos, yPos, pow(0.5f, dt * groundBlurSpeed), blurBrushRadius, blurBrushType, flattenType, flattenAngle, flattenOrientation);
-                }
-                else
-                {
-                  gWorld->flattenTerrain(xPos, zPos, yPos, pow(0.5f, dt * groundBlurSpeed), blurBrushRadius, blurBrushType, flattenType);
-                }
-              }
-
+              mainGui->flattenTool->flatten(dt);
             }
-            else if (Environment::getInstance()->CtrlDown)
+            else if (_mod_ctrl_down)
             {
-              gWorld->blurTerrain(xPos, zPos, pow(0.5f, dt * groundBlurSpeed), std::min(blurBrushRadius, 30.0f), blurBrushType);
+              mainGui->flattenTool->blur(dt);
             }
           }
           break;
         case 2:
-          if (Environment::getInstance()->ShiftDown && Environment::getInstance()->CtrlDown && Environment::getInstance()->AltDown)
+          if (_mod_shift_down && _mod_ctrl_down && _mod_alt_down)
           {
             // clear chunk texture
             if (mViewMode == eViewMode_3D && !underMap)
@@ -1739,12 +1378,12 @@ void MapView::tick(float t, float dt)
             else if (mViewMode == eViewMode_2D)
               gWorld->eraseTextures(CHUNKSIZE * 4.0f * video.ratio() * (static_cast<float>(MouseX) / static_cast<float>(video.xres()) - 0.5f) / gWorld->zoom + gWorld->camera.x, CHUNKSIZE * 4.0f * (static_cast<float>(MouseY) / static_cast<float>(video.yres()) - 0.5f) / gWorld->zoom + gWorld->camera.z);
           }
-          else if (Environment::getInstance()->CtrlDown)
+          else if (_mod_ctrl_down)
           {
             // Pick texture
             mainGui->TexturePicker->getTextures(*gWorld->GetCurrentSelection());
           }
-          else  if (Environment::getInstance()->ShiftDown)
+          else  if (_mod_shift_down)
           {
             // Paint 3d if shift down.
             if (UITexturingGUI::getSelectedTexture())
@@ -1789,25 +1428,26 @@ void MapView::tick(float t, float dt)
           if (mViewMode == eViewMode_3D)
           {
             // no undermap check here, else it's impossible to remove holes
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
-              boost::get<selected_chunk_type> (*Selection).chunk->getSelectionCoord(&xPos, &zPos);
-              gWorld->removeHole(xPos, zPos, Environment::getInstance()->AltDown);
+              auto pos (boost::get<selected_chunk_type> (*Selection).position);
+              gWorld->setHole(pos.x, pos.z, _mod_alt_down, false);
             }
-            else if (Environment::getInstance()->CtrlDown && !underMap)
-              gWorld->addHole(xPos, zPos, Environment::getInstance()->AltDown);
+            else if (_mod_ctrl_down && !underMap)
+            {
+              gWorld->setHole(xPos, zPos, _mod_alt_down, true);
+            }              
           }
           break;
         case 4:
           if (mViewMode == eViewMode_3D && !underMap)
           {
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
               // draw the selected AreaId on current selected chunk
-              MapChunk* chnk (boost::get<selected_chunk_type> (*gWorld->GetCurrentSelection()).chunk);
-              gWorld->setAreaID(Environment::getInstance()->selectedAreaID, chnk->mt->index, chnk->px, chnk->py);
+              gWorld->setAreaID(xPos, zPos, Environment::getInstance()->selectedAreaID, false);
             }
-            else if (Environment::getInstance()->CtrlDown)
+            else if (_mod_ctrl_down)
             {
               // pick areaID from chunk
               MapChunk* chnk (boost::get<selected_chunk_type> (*gWorld->GetCurrentSelection()).chunk);
@@ -1820,11 +1460,11 @@ void MapView::tick(float t, float dt)
         case 5:
           if (mViewMode == eViewMode_3D && !underMap)
           {
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
               gWorld->mapIndex->setFlag(true, xPos, zPos);
             }
-            else if (Environment::getInstance()->CtrlDown)
+            else if (_mod_ctrl_down)
             {
               gWorld->mapIndex->setFlag(false, xPos, zPos);
             }
@@ -1836,29 +1476,33 @@ void MapView::tick(float t, float dt)
             auto lSelection = gWorld->GetCurrentSelection();
             MapChunk* chnk = boost::get<selected_chunk_type> (*Selection).chunk;
 
-            if (Environment::getInstance()->ShiftDown)
+            if (_mod_shift_down)
             {
               gWorld->addWaterLayerChunk(chnk->mt->index, chnk->px, chnk->py);
             }
-            if (Environment::getInstance()->CtrlDown && !Environment::getInstance()->AltDown)
+            if (_mod_ctrl_down && !_mod_alt_down)
             {
               gWorld->delWaterLayerChunk(chnk->mt->index, chnk->px, chnk->py);
             }
-            if (Environment::getInstance()->AltDown && !Environment::getInstance()->CtrlDown)
+            if (_mod_alt_down && !_mod_ctrl_down)
             {
               gWorld->mapIndex->setWater(true, xPos, zPos);
             }
-            if (Environment::getInstance()->AltDown && Environment::getInstance()->CtrlDown)
+            if (_mod_alt_down && _mod_ctrl_down)
               gWorld->mapIndex->setWater(false, xPos, zPos);
           }
           break;
         case 8:
           if (mViewMode == eViewMode_3D && !underMap)
           {
-            if (Environment::getInstance()->ShiftDown)
-              gWorld->changeShader(xPos, zPos, dt*shaderSpeed * 2, shaderRadius, true);
-            if (Environment::getInstance()->CtrlDown)
-              gWorld->changeShader(xPos, zPos, dt*shaderSpeed * 2, shaderRadius, false);
+            if (_mod_shift_down)
+            {
+              mainGui->shaderTool->changeShader(dt, true);
+            }
+            if (_mod_ctrl_down)
+            {
+              mainGui->shaderTool->changeShader(dt, false);
+            }
           }
           break;
         }
@@ -1941,28 +1585,15 @@ void MapView::tick(float t, float dt)
 
 void MapView::doSelection (bool selectTerrainOnly)
 {
-  video.set3D();
-  opengl::matrix::look_at (gWorld->camera, gWorld->lookat, {0.0f, 1.0f, 0.0f});
-
-  GLint viewport[4];
-  gl.getIntegerv(GL_VIEWPORT, viewport);
-
-  float win_x (Environment::getInstance()->screenX);
-  float win_y (viewport[3] - Environment::getInstance()->screenY);
-
-  math::vector_4d const normalized_device_coords
-    ( 2.0f * (win_x - static_cast<float> (viewport[0])) / static_cast<float> (viewport[2]) - 1.0f
-    , 2.0f * (win_y - static_cast<float> (viewport[1])) / static_cast<float> (viewport[3]) - 1.0f
-    , 0.0f
-    , 1.0f
+  math::vector_3d const pos
+    ( ( ( math::look_at (gWorld->camera, gWorld->lookat, {0.0f, 1.0f, 0.0f}).transposed()
+        * math::perspective (video.fov(), video.ratio(), video.nearclip(), video.farclip()).transposed()
+        ).inverted().transposed()
+      * video.normalized_device_coords ( Environment::getInstance()->screenX
+                                       , Environment::getInstance()->screenY
+                                       )
+      ).xyz_normalized_by_w()
     );
-
-  math::vector_3d const pos ( ( ( opengl::matrix::model_view()
-                                * opengl::matrix::projection()
-                                ).inverted().transposed()
-                              * normalized_device_coords
-                              ).xyz_normalized_by_w()
-                            );
 
   math::ray ray (gWorld->camera, pos - gWorld->camera);
 
@@ -1976,11 +1607,24 @@ void MapView::doSelection (bool selectTerrainOnly)
               }
             );
 
-  gWorld->SetCurrentSelection
-    ( results.empty()
-    ? boost::optional<selection_type>()
-    : boost::optional<selection_type> (results.front().second)
-    );
+  if (results.empty())
+  {
+    gWorld->SetCurrentSelection (boost::none);
+  }
+  else
+  {
+    auto const& hit (results.front().second);
+    gWorld->SetCurrentSelection (hit);
+
+    auto const pos ( hit.which() == eEntry_Model ? boost::get<selected_model_type> (hit)->pos
+                   : hit.which() == eEntry_WMO ? boost::get<selected_wmo_type> (hit)->pos
+                   : hit.which() == eEntry_MapChunk ? boost::get<selected_chunk_type> (hit).position
+                   : throw std::logic_error ("bad variant")
+                   );
+    Environment::getInstance()->Pos3DX = pos.x;
+    Environment::getInstance()->Pos3DY = pos.y;
+    Environment::getInstance()->Pos3DZ = pos.z;
+  }
 }
 
 
@@ -2059,7 +1703,22 @@ void MapView::displayViewMode_3D(float /*t*/, float /*dt*/)
 
   video.set3D();
 
-  gWorld->draw();
+  //! \ todo: make the current tool return the radius
+  float radius = 0.0f, hardness = 0.0f;
+
+  switch (terrainMode)
+  {
+    case 0: radius = mainGui->terrainTool->brushRadius(); break;
+    case 1: radius = mainGui->flattenTool->brushRadius(); break;
+    case 2: 
+      radius = textureBrush.getRadius(); 
+      hardness = textureBrush.getHardness();
+      break;
+    case 6: break; //! \ todo: water: get radius 
+    case 8: radius = mainGui->shaderTool->brushRadius(); break;
+  }
+
+  gWorld->draw(radius, hardness);
 
   displayGUIIfEnabled();
 }
@@ -2106,784 +1765,495 @@ void MapView::resizewindow()
   mainGui->resize();
 }
 
-void MapView::keypressed(SDL_KeyboardEvent *e)
+void MapView::keyPressEvent (SDL_KeyboardEvent *e)
 {
-  if (LastClicked && LastClicked->KeyBoardEvent(e)) return;
+  if (LastClicked && LastClicked->key_down (e->keysym.sym, e->keysym.unicode))
+  {
+    return;
+  }
 
   if (e->keysym.mod & KMOD_CAPS)
     mainGui->capsWarning->show();
   else
     mainGui->capsWarning->hide();
 
-  if (e->type == SDL_KEYDOWN)
+  if (handleHotkeys(e))
+    return;
+
+  if (e->keysym.sym == SDLK_LSHIFT || e->keysym.sym == SDLK_RSHIFT)
+    _mod_shift_down = true;
+
+  if (e->keysym.sym == SDLK_LALT || e->keysym.sym == SDLK_RALT)
+    _mod_alt_down = true;
+
+  if (e->keysym.sym == SDLK_LCTRL || e->keysym.sym == SDLK_RCTRL)
+    _mod_ctrl_down = true;
+
+  if (e->keysym.sym == SDLK_SPACE)
+    _mod_space_down = true;
+
+  // movement
+  if (e->keysym.sym == SDLK_w)
   {
+    key_w = true;
+    moving = 1.0f;
+  }
 
+  if (e->keysym.sym == SDLK_UP)
+  {
+    lookat = 0.75f;
+  }
 
-    if (handleHotkeys(e))
-      return;
+  if (e->keysym.sym == SDLK_DOWN)
+  {
+    lookat = -0.75f;
+  }
 
-    // key DOWN
+  if (e->keysym.sym == SDLK_LEFT)
+  {
+    turn = -0.75f;
+  }
 
-    if (e->keysym.sym == SDLK_LSHIFT || e->keysym.sym == SDLK_RSHIFT)
-      Environment::getInstance()->ShiftDown = true;
+  if (e->keysym.sym == SDLK_RIGHT)
+  {
+    turn = 0.75f;
+  }
 
-    if (e->keysym.sym == SDLK_LALT || e->keysym.sym == SDLK_RALT)
-      Environment::getInstance()->AltDown = true;
+  // save
+  if (e->keysym.sym == SDLK_s)
+    moving = -1.0f;
 
-    if (e->keysym.sym == SDLK_LCTRL || e->keysym.sym == SDLK_RCTRL)
-      Environment::getInstance()->CtrlDown = true;
+  if (e->keysym.sym == SDLK_a)
+    strafing = -1.0f;
 
-    if (e->keysym.sym == SDLK_SPACE)
-      Environment::getInstance()->SpaceDown = true;
+  if (e->keysym.sym == SDLK_d)
+    strafing = 1.0f;
 
-    // movement
-    if (e->keysym.sym == SDLK_w)
+  if (e->keysym.sym == SDLK_e)
+    updown = -1.0f;
+
+  if (e->keysym.sym == SDLK_q)
+    updown = 1.0f;
+
+  // position correction with num pad
+  if (e->keysym.sym == SDLK_KP8)
+    keyx = -1;
+
+  if (e->keysym.sym == SDLK_KP2)
+    keyx = 1;
+
+  if (e->keysym.sym == SDLK_KP6)
+    keyz = -1;
+
+  if (e->keysym.sym == SDLK_KP4)
+    keyz = 1;
+
+  if (e->keysym.sym == SDLK_KP1)
+    keyy = -1;
+
+  if (e->keysym.sym == SDLK_KP3)
+    keyy = 1;
+
+  if (e->keysym.sym == SDLK_KP7)
+    keyr = 1;
+
+  if (e->keysym.sym == SDLK_KP9)
+    keyr = -1;
+
+  if (e->keysym.sym == SDLK_KP0)
+    if (terrainMode == 6)
     {
-      key_w = true;
-      moving = 1.0f;
+      gWorld->setWaterHeight(tile_index(gWorld->camera), 0.0f);
+      mainGui->guiWater->updateData();
     }
 
-    if (e->keysym.sym == SDLK_UP)
-    {
-      lookat = 0.75f;
-    }
-
-    if (e->keysym.sym == SDLK_DOWN)
-    {
-      lookat = -0.75f;
-    }
-
-    if (e->keysym.sym == SDLK_LEFT)
-    {
-      turn = -0.75f;
-    }
-
-    if (e->keysym.sym == SDLK_RIGHT)
-    {
-      turn = 0.75f;
-    }
-
-    // save
-    if (e->keysym.sym == SDLK_s)
-      moving = -1.0f;
-
-    if (e->keysym.sym == SDLK_a)
-      strafing = -1.0f;
-
-    if (e->keysym.sym == SDLK_d)
-      strafing = 1.0f;
-
-    if (e->keysym.sym == SDLK_e)
-      updown = -1.0f;
-
-    if (e->keysym.sym == SDLK_q)
-      updown = 1.0f;
-
-    // position correction with num pad
-    if (e->keysym.sym == SDLK_KP8)
-      keyx = -1;
-
-    if (e->keysym.sym == SDLK_KP2)
-      keyx = 1;
-
-    if (e->keysym.sym == SDLK_KP6)
-      keyz = -1;
-
-    if (e->keysym.sym == SDLK_KP4)
-      keyz = 1;
-
-    if (e->keysym.sym == SDLK_KP1)
-      keyy = -1;
-
-    if (e->keysym.sym == SDLK_KP3)
-      keyy = 1;
-
-    if (e->keysym.sym == SDLK_KP7)
-      keyr = 1;
-
-    if (e->keysym.sym == SDLK_KP9)
-      keyr = -1;
-
-    if (e->keysym.sym == SDLK_KP0)
-      if (terrainMode == 6)
-      {
-        gWorld->setWaterHeight(tile_index(gWorld->camera), 0.0f);
-        mainGui->guiWater->updateData();
-      }
-
-
-    // delete object
-    if (e->keysym.sym == SDLK_DELETE)
-      DeleteSelectedObject(0, 0);
-
-    // copy model to clipboard
-    if (e->keysym.sym == SDLK_c)
-    {
-      if (Environment::getInstance()->CtrlDown && gWorld->GetCurrentSelection())
-        mainGui->objectEditor->copy(*gWorld->GetCurrentSelection());
-      else if (Environment::getInstance()->AltDown && Environment::getInstance()->CtrlDown)
-        mainGui->toggleCursorSwitcher();
-      else if (Environment::getInstance()->ShiftDown)
-        InsertObject(0, 14);
-      else if (Environment::getInstance()->AltDown)
-        InsertObject(0, 15);
-      else
-      {
-        if (terrainMode == 9)
-        {
-          mainGui->objectEditor->copy(*gWorld->GetCurrentSelection());
-        }
-        else
-        {
-          Environment::getInstance()->cursorType++;
-          Environment::getInstance()->cursorType %= 4;
-        }
-      }
-    }
-
-
-    // paste model
-    if (e->keysym.sym == SDLK_v)
-    {
-      if (Environment::getInstance()->ShiftDown)
-      {
-        InsertObject(0, 14);
-      }
-      else if (Environment::getInstance()->AltDown)
-      {
-        InsertObject(0, 15);
-      }
-      else if (terrainMode == 9 || Environment::getInstance()->CtrlDown)
-      {
-        mainGui->objectEditor->pasteObject();
-      }
-    }
-
-
-    // with ctrl toggle detail window
-    // without toggle the settings of the current edit mode.
-    if (e->keysym.sym == SDLK_x)
-    {
-      if (Environment::getInstance()->CtrlDown)
-      {
-        // toggle detail window
-        mainGui->guidetailInfos->toggleVisibility();
-      }
-      else
-      {
-        // toggle terrainMode window
-        if (terrainMode == 2)
-        {
-          view_texture_palette(0, 0);
-        }
-
-
-      }
-    }
-
-    // invert mouse or swap paint modes
-    if (e->keysym.sym == SDLK_i)
-    {
-      if (Environment::getInstance()->CtrlDown)
-      {
-        // temp till fixe draw texture.
-        if (Environment::getInstance()->paintMode) Environment::getInstance()->paintMode = false;
-        else Environment::getInstance()->paintMode = true;
-      }
-      else
-      {
-        mousedir *= -1.0f;
-      }
-
-    }
-    // move speed doubling or raw saving
-    if (e->keysym.sym == SDLK_p)
-    {
-      if (Environment::getInstance()->CtrlDown && Environment::getInstance()->ShiftDown)
-      {
-        Saving = true;
-      }
-      else
-      {
-        movespd *= 2.0f;
-      }
-    }
-
-    if (e->keysym.sym == SDLK_o)
-      movespd *= 0.5f;
-
-    // turn around or reset object orientation
-    if (e->keysym.sym == SDLK_r)
-    {
-      if (Environment::getInstance()->CtrlDown)
-        ResetSelectedObjectRotation(0, 0);
-      else ah += 180.0f;
-    }
-
-    if (e->keysym.sym == SDLK_t)
-    {
-      // toggle flatten angle mode
-      if (terrainMode == 1)
-      {
-        if (Environment::getInstance()->SpaceDown)
-        {
-          gFlattenTypeGroup->Activate((flattenType + 1) % eFlattenMode_Count);
-        }
-        else
-        {
-          toggle_flatten->setState(!(Environment::getInstance()->flattenAngleEnabled));
-          toggleFlattenAngle(!(Environment::getInstance()->flattenAngleEnabled), 0);
-        }
-      }
-      else if (terrainMode == 2)
-      {
-        sprayBrushActive = !sprayBrushActive;
-        toggleSpray->setState(sprayBrushActive);
-      }
-      else if (terrainMode == 3)
-      {
-        math::vector_3d cam = gWorld->camera;
-        if (Environment::getInstance()->AltDown)
-        {
-          gWorld->addHoleADT(cam.x, cam.z);
-        }
-        else
-        {
-          gWorld->removeHoleADT(cam.x, cam.z);
-        }
-      }
-      else if (terrainMode == 9)
-      {
-        mainGui->objectEditor->togglePasteMode();
-      }
-
-
-    }
-
-    // clip object to ground
-    if (e->keysym.sym == SDLK_PAGEDOWN)
-      SnapSelectedObjectToGround(0, 0);
-
-    // speed of daytime.
-    if (e->keysym.sym == SDLK_n)
-      this->mTimespeed += 90.0f;
-
-    if (e->keysym.sym == SDLK_b)
-      this->mTimespeed -= 90.0f;
-
-    // no negativ time speed!
-    if (this->mTimespeed < 0.0f)  this->mTimespeed = 0.0f;
-
-    if (e->keysym.sym == SDLK_j)
-      this->mTimespeed = 0.0f;
-
-
-
-    // toggle lightning
-    if (e->keysym.sym == SDLK_l)
-      gWorld->lighting = !gWorld->lighting;
-
-    // toggle interface
-    if (e->keysym.sym == SDLK_TAB)
-      _GUIDisplayingEnabled = !_GUIDisplayingEnabled;
-
-    // toggle "terrain texturing mode" / draw models
-    if (e->keysym.sym == SDLK_F1)
-    {
-      if (Environment::getInstance()->ShiftDown)
-      {
-        if (alloff)
-        {
-          alloff_models = gWorld->drawmodels;
-          alloff_doodads = gWorld->drawdoodads;
-          alloff_contour = DrawMapContour;
-          alloff_wmo = gWorld->drawwmo;
-          alloff_fog = gWorld->drawfog;
-          alloff_terrain = gWorld->drawterrain;
-
-          gWorld->drawmodels = false;
-          gWorld->drawdoodads = false;
-          DrawMapContour = true;
-          gWorld->drawwmo = false;
-          gWorld->drawterrain = true;
-          gWorld->drawfog = false;
-        }
-        else
-        {
-          gWorld->drawmodels = alloff_models;
-          gWorld->drawdoodads = alloff_doodads;
-          DrawMapContour = alloff_contour;
-          gWorld->drawwmo = alloff_wmo;
-          gWorld->drawterrain = alloff_terrain;
-          gWorld->drawfog = alloff_fog;
-        }
-        alloff = !alloff;
-      }
-      else
-      {
-        gWorld->drawmodels = !gWorld->drawmodels;
-      }
-    }
-
-
-    // toggle drawing of doodads in WMOs.
-    if (e->keysym.sym == SDLK_F2)
-      gWorld->drawdoodads = !gWorld->drawdoodads;
-
-    // toggle terrain
-    if (e->keysym.sym == SDLK_F3)
-      gWorld->drawterrain = !gWorld->drawterrain;
-
-    // toggle better selection mode
-    if (e->keysym.sym == SDLK_F4 && Environment::getInstance()->ShiftDown)
-    {
-      Settings::getInstance()->AutoSelectingMode = !Settings::getInstance()->AutoSelectingMode;
-    }
-
-    // toggle draw water
-    if (e->keysym.sym == SDLK_F4 && !Environment::getInstance()->ShiftDown)
-      gWorld->drawwater = !gWorld->drawwater;
-
-    // toggle Animation
-    if (e->keysym.sym == SDLK_F11)
-    {
-      gWorld->renderAnimations = !gWorld->renderAnimations;
-    }
-
-    // toggle chunk limitation lines
-    if (e->keysym.sym == SDLK_F7)
-    {
-      if (Environment::getInstance()->ShiftDown)
-      {
-        Environment::getInstance()->view_holelines = !Environment::getInstance()->view_holelines;
-      }
-      else
-      {
-        gWorld->drawlines = !gWorld->drawlines;
-      }
-    }
-
-    // toggle drawing of WMOs
-    if (e->keysym.sym == SDLK_F6)
-      gWorld->drawwmo = !gWorld->drawwmo;
-
-    // toggle showing a lot of information about selected item
-    if (e->keysym.sym == SDLK_F8)
-    {
-      mainGui->guidetailInfos->toggleVisibility();
-    }
-
-    // toggle height contours on terrain
-    if (e->keysym.sym == SDLK_F9)
-      DrawMapContour = !DrawMapContour;
-
-
-
-    // toggle help window
-    if (e->keysym.sym == SDLK_h)
+  // copy model to clipboard
+  if (e->keysym.sym == SDLK_c)
+  {
+    if (_mod_ctrl_down && gWorld->GetCurrentSelection())
+      mainGui->objectEditor->copy(*gWorld->GetCurrentSelection());
+    else if (_mod_alt_down && _mod_ctrl_down)
+      mainGui->toggleCursorSwitcher();
+    else if (_mod_shift_down)
+      InsertObject(14);
+    else if (_mod_alt_down)
+      InsertObject(15);
+    else
     {
       if (terrainMode == 9)
       {
-        // toggle hidden models visibility
-        if (Environment::getInstance()->SpaceDown)
-        {
-          Environment::getInstance()->showModelFromHiddenList = !Environment::getInstance()->showModelFromHiddenList;
-        }
-        else if (Environment::getInstance()->ShiftDown)
-        {
-          gWorld->clearHiddenModelList();
-        }
-        else
-        {
-          // toggle selected model visibility
-          if (gWorld->HasSelection())
-          {
-            auto selection = gWorld->GetCurrentSelection();
-            if (selection->which() == eEntry_Model)
-            {
-              boost::get<selected_model_type> (*selection)->model->toggleVisibility();
-            }
-            else if (selection->which() == eEntry_WMO)
-            {
-              boost::get<selected_wmo_type> (*selection)->wmo->toggleVisibility();
-            }
-          }
-        }
-
+        mainGui->objectEditor->copy(*gWorld->GetCurrentSelection());
       }
       else
       {
-        mainGui->toggleHelp();
+        Environment::getInstance()->cursorType++;
+        Environment::getInstance()->cursorType %= 4;
       }
     }
+  }
 
-
-
-    if (e->keysym.sym == SDLK_f)
+  if (e->keysym.sym == SDLK_t)
+  {
+    // toggle flatten angle mode
+    if (terrainMode == 1)
     {
-      if (terrainMode == 1)
+      if (_mod_space_down)
       {
-        if (Environment::getInstance()->SpaceDown)
-        {
-          toggleFlattenLock(!flattenRelativeMode, 0);
-          toggle_flatten_relative->setState(flattenRelativeMode);
-        }
-        else
-        {
-          flattenRelativePos = Environment::getInstance()->get_cursor_pos();
-          flatten_relative_x->value(misc::floatToStr(flattenRelativePos.x));
-          flatten_relative_y->value(misc::floatToStr(flattenRelativePos.y));
-          flatten_relative_z->value(misc::floatToStr(flattenRelativePos.z));
-        }
+        mainGui->flattenTool->nextFlattenMode();
       }
-      else if (terrainMode == 9)
+      else
       {
+        mainGui->flattenTool->toggleFlattenAngle();
+      }
+    }
+    else if (terrainMode == 2)
+    {
+      sprayBrushActive = !sprayBrushActive;
+      toggleSpray->setState(sprayBrushActive);
+    }
+    else if (terrainMode == 3)
+    {
+      gWorld->setHoleADT(gWorld->camera.x, gWorld->camera.z, _mod_alt_down);
+    }
+    else if (terrainMode == 9)
+    {
+      mainGui->objectEditor->togglePasteMode();
+    }
+  }
+
+  // toggle help window
+  if (e->keysym.sym == SDLK_h)
+  {
+    if (terrainMode == 9)
+    {
+      // toggle hidden models visibility
+      if (_mod_space_down)
+      {
+        Environment::getInstance()->showModelFromHiddenList = !Environment::getInstance()->showModelFromHiddenList;
+      }
+      else if (_mod_shift_down)
+      {
+        gWorld->clearHiddenModelList();
+      }
+      else
+      {
+        // toggle selected model visibility
         if (gWorld->HasSelection())
         {
-          math::vector_3d pos = Environment::getInstance()->get_cursor_pos();
           auto selection = gWorld->GetCurrentSelection();
-
           if (selection->which() == eEntry_Model)
           {
-            gWorld->updateTilesModel(boost::get<selected_model_type> (*selection));
-            boost::get<selected_model_type> (*selection)->pos = pos;
-            boost::get<selected_model_type> (*selection)->recalcExtents();
-            gWorld->updateTilesModel(boost::get<selected_model_type> (*selection));
+            boost::get<selected_model_type> (*selection)->model->toggleVisibility();
           }
           else if (selection->which() == eEntry_WMO)
           {
-            gWorld->updateTilesWMO(boost::get<selected_wmo_type> (*selection));
-            boost::get<selected_wmo_type> (*selection)->pos = pos;
-            boost::get<selected_wmo_type> (*selection)->recalcExtents();
-            gWorld->updateTilesWMO(boost::get<selected_wmo_type> (*selection));
+            boost::get<selected_wmo_type> (*selection)->wmo->toggleVisibility();
           }
         }
-      }
-      else // draw fog
-      {
-        gWorld->drawfog = !gWorld->drawfog;
       }
     }
-
-
-    // reload a map tile STEFF out because of UID recalc. reload could kill all.
-    //if( e->keysym.sym == SDLK_j && Environment::getInstance()->ShiftDown )
-    //  gWorld->reloadTile( static_cast<int>( gWorld->camera.x ) / TILESIZE, static_cast<int>( gWorld->camera.z ) / TILESIZE );
-
-    // fog distance or brush radius
-    if (e->keysym.sym == SDLK_KP_PLUS || e->keysym.sym == SDLK_PLUS)
+    else
     {
-      if (Environment::getInstance()->AltDown)
-      {
-        switch (terrainMode)
-        {
-        case 0:
-          groundBrushRadius = std::min(1000.0f, groundBrushRadius + 0.01f);
-          ground_brush_radius->setValue(groundBrushRadius / 1000.0f);
-          break;
-        case 1:
-          blurBrushRadius = std::min(1000.0f, blurBrushRadius + 0.01f);
-          blur_brush->setValue(blurBrushRadius / 1000.0f);
-          break;
-        case 2:
-          textureBrush.setRadius(std::min(100.0f, textureBrush.getRadius() + 0.1f));
-          paint_brush->setValue(textureBrush.getRadius() / 100.0f);
-          break;
-        case 6:
-          tile_index tile(gWorld->camera);
-          gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) + 2.0f));
-          mainGui->guiWater->updateData();
-          break;
-        }
-      }
-      else if ((!gWorld->HasSelection() || (gWorld->HasSelection() && gWorld->GetCurrentSelection()->which() == eEntry_MapChunk)))
-      {
-        if (terrainMode == 6)
-        {
-          tile_index tile(gWorld->camera);
+      mainGui->toggleHelp();
+    }
+  }
 
-          if (Environment::getInstance()->ShiftDown)
-          {
-            gWorld->setWaterTrans(tile, static_cast<unsigned char>(std::ceil(static_cast<float>(gWorld->getWaterTrans(tile)) + 1)));
-          }
-          else if (Environment::getInstance()->CtrlDown)
-          {
-            gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) + 5.0f));
-          }
-          else
-          {
-            gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) + 1.0f));
-          }
-
-          mainGui->guiWater->updateData();
-        }
-        else if (Environment::getInstance()->ShiftDown)
-        {
-          gWorld->fogdistance += 60.0f;// fog change only when no model is selected!
-        }
+  if (e->keysym.sym == SDLK_f)
+  {
+    if (terrainMode == 1)
+    {
+      if (_mod_space_down)
+      {
+        mainGui->flattenTool->toggleFlattenLock();
       }
       else
       {
-        //change selected model size
-        keys = 1;
+        mainGui->flattenTool->lockPos();
       }
     }
-
-    if (e->keysym.sym == SDLK_KP_MINUS || e->keysym.sym == SDLK_MINUS)
+    else if (terrainMode == 9)
     {
-      if (Environment::getInstance()->AltDown)
+      if (gWorld->HasSelection())
       {
-        switch (terrainMode)
-        {
-        case 0:
-          groundBrushRadius = std::max(0.0f, groundBrushRadius - 0.01f);
-          ground_brush_radius->setValue(groundBrushRadius / 1000.0f);
-          break;
-        case 1:
-          blurBrushRadius = std::max(0.0f, blurBrushRadius - 0.01f);
-          blur_brush->setValue(blurBrushRadius / 1000);
-          break;
-        case 2:
-          textureBrush.setRadius(std::max(0.0f, textureBrush.getRadius() - 0.1f));
-          paint_brush->setValue(textureBrush.getRadius() / 100);
-          break;
-        case 6:
-          tile_index tile(gWorld->camera);
-          gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) - 2.0f));
-          mainGui->guiWater->updateData();
-          break;
-        }
-      }
-      else if ((!gWorld->HasSelection() || (gWorld->HasSelection() && gWorld->GetCurrentSelection()->which() == eEntry_MapChunk)))
-      {
-        if (terrainMode == 6)
-        {
-          tile_index tile(gWorld->camera);
-          if (Environment::getInstance()->ShiftDown)
-          {
-            gWorld->setWaterTrans(tile, static_cast<unsigned char>(std::floor(static_cast<float>(gWorld->getWaterTrans(tile))) - 1));
-          }
-          else if (Environment::getInstance()->CtrlDown)
-          {
-            gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) - 5.0f));
-          }
-          else
-          {
-            gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) - 1.0f));
-          }
+        math::vector_3d pos = Environment::getInstance()->get_cursor_pos();
+        auto selection = gWorld->GetCurrentSelection();
 
-          mainGui->guiWater->updateData();
-        }
-        else if (Environment::getInstance()->ShiftDown)
+        if (selection->which() == eEntry_Model)
         {
-          gWorld->fogdistance -= 60.0f;// fog change only when no model is selected!
+          gWorld->updateTilesModel(boost::get<selected_model_type> (*selection));
+          boost::get<selected_model_type> (*selection)->pos = pos;
+          boost::get<selected_model_type> (*selection)->recalcExtents();
+          gWorld->updateTilesModel(boost::get<selected_model_type> (*selection));
         }
-
-      }
-      else
-      {
-        //change selected model size
-        keys = -1;
+        else if (selection->which() == eEntry_WMO)
+        {
+          gWorld->updateTilesWMO(boost::get<selected_wmo_type> (*selection));
+          boost::get<selected_wmo_type> (*selection)->pos = pos;
+          boost::get<selected_wmo_type> (*selection)->recalcExtents();
+          gWorld->updateTilesWMO(boost::get<selected_wmo_type> (*selection));
+        }
       }
     }
-
-    // minimap
-    if (e->keysym.sym == SDLK_m)
-      mainGui->minimapWindow->toggleVisibility();
-
-    if (e->keysym.sym == SDLK_g)
+    else // draw fog
     {
-      // write teleport cords to txt file
-      std::ofstream f("ports.txt", std::ios_base::app);
-      f << "Map: " << gAreaDB.getAreaName(gWorld->getAreaID()) << " on ADT " << std::floor(gWorld->camera.x / TILESIZE) << " " << std::floor(gWorld->camera.z / TILESIZE) << std::endl;
-      f << "Trinity:" << std::endl << ".go " << (ZEROPOINT - gWorld->camera.z) << " " << (ZEROPOINT - gWorld->camera.x) << " " << gWorld->camera.y << " " << gWorld->getMapID() << std::endl;
-      f << "ArcEmu:" << std::endl << ".worldport " << gWorld->getMapID() << " " << (ZEROPOINT - gWorld->camera.z) << " " << (ZEROPOINT - gWorld->camera.x) << " " << gWorld->camera.y << " " << std::endl << std::endl;
-      f.close();
+      gWorld->drawfog = !gWorld->drawfog;
     }
+  }
 
+  // reload a map tile STEFF out because of UID recalc. reload could kill all.
+  //if( e->keysym.sym == SDLK_j && _mod_shift_down )
+  //  gWorld->reloadTile( static_cast<int>( gWorld->camera.x ) / TILESIZE, static_cast<int>( gWorld->camera.z ) / TILESIZE );
 
-    // toogle between smooth / flat / linear
-    if (e->keysym.sym == SDLK_y)
+  // fog distance or brush radius
+  if (e->keysym.sym == SDLK_KP_PLUS || e->keysym.sym == SDLK_PLUS)
+  {
+    if (_mod_alt_down)
     {
       switch (terrainMode)
       {
       case 0:
-        gGroundToggleGroup->Activate((Environment::getInstance()->groundBrushType + 1) % 6);
+        mainGui->terrainTool->changeRadius(0.01f);
         break;
-
       case 1:
-        gBlurToggleGroup->Activate((blurBrushType + 1) % 3);
+        mainGui->flattenTool->changeRadius(0.01f);
+        break;
+      case 2:
+        textureBrush.setRadius(std::min(100.0f, textureBrush.getRadius() + 0.1f));
+        paint_brush->setValue(textureBrush.getRadius() / 100.0f);
+        break;
+      case 6:
+        tile_index tile(gWorld->camera);
+        gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) + 2.0f));
+        mainGui->guiWater->updateData();
         break;
       }
     }
-
-    // is not used somewere else!!
-    //! \todo  what is this?
-    if (e->keysym.sym == SDLK_g)
-      drawFlags = !drawFlags;
-
-    // toogle tile mode
-    if (e->keysym.sym == SDLK_u)
+    else if ((!gWorld->HasSelection() || (gWorld->HasSelection() && gWorld->GetCurrentSelection()->which() == eEntry_MapChunk)))
     {
-      if (mViewMode == eViewMode_2D)
+      if (terrainMode == 6)
       {
-        mViewMode = eViewMode_3D;
-        terrainMode = saveterrainMode;
-        // Set the right icon in toolbar
-        mainGui->guiToolbar->IconSelect(terrainMode);
+        tile_index tile(gWorld->camera);
+
+        if (_mod_shift_down)
+        {
+          gWorld->setWaterTrans(tile, static_cast<unsigned char>(std::ceil(static_cast<float>(gWorld->getWaterTrans(tile)) + 1)));
+        }
+        else if (_mod_ctrl_down)
+        {
+          gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) + 5.0f));
+        }
+        else
+        {
+          gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) + 1.0f));
+        }
+
+        mainGui->guiWater->updateData();
       }
-      else
+      else if (_mod_shift_down)
       {
-        mViewMode = eViewMode_2D;
-        saveterrainMode = terrainMode;
-        terrainMode = 2;
-        // Set the right icon in toolbar
-        mainGui->guiToolbar->IconSelect(terrainMode);
+        gWorld->fogdistance += 60.0f;// fog change only when no model is selected!
       }
     }
-
-    // doodads set
-    if (e->keysym.sym >= SDLK_0 && e->keysym.sym <= SDLK_9)
+    else
     {
-      if (gWorld->IsSelection(eEntry_WMO))
-      {
-        boost::get<selected_wmo_type> (*gWorld->GetCurrentSelection())->doodadset = e->keysym.sym - SDLK_0;
-      }
-      else if (Environment::getInstance()->ShiftDown)
-      {
-        if (e->keysym.sym == SDLK_1)
-          movespd = 15.0f;
-        if (e->keysym.sym == SDLK_2)
-          movespd = 50.0f;
-        if (e->keysym.sym == SDLK_3)
-          movespd = 200.0f;
-        if (e->keysym.sym == SDLK_4)
-          movespd = 800.0f;
-      }
-      else if (Environment::getInstance()->AltDown)
-      {
-        if (e->keysym.sym == SDLK_1)
-          mainGui->G1->setValue(0.01f);
-        if (e->keysym.sym == SDLK_2)
-          mainGui->G1->setValue(0.25f);
-        if (e->keysym.sym == SDLK_3)
-          mainGui->G1->setValue(0.50f);
-        if (e->keysym.sym == SDLK_4)
-          mainGui->G1->setValue(0.75f);
-        if (e->keysym.sym == SDLK_5)
-          mainGui->G1->setValue(0.99f);
-      }
-      else if (e->keysym.sym >= SDLK_1 && e->keysym.sym <= SDLK_9)
-      {
-        terrainMode = e->keysym.sym - SDLK_1;
-        mainGui->guiToolbar->IconSelect(terrainMode);
-      }
-      else if (e->keysym.sym == SDLK_0)
-      {
-        terrainMode = 9; // object editor
-        mainGui->guiToolbar->IconSelect(terrainMode);
-      }
-    }
-
-    // add a new bookmark
-    if (e->keysym.sym == SDLK_F5)
-    {
-      std::ofstream f("bookmarks.txt", std::ios_base::app);
-      f << gWorld->getMapID() << " " << gWorld->camera.x << " " << gWorld->camera.y << " " << gWorld->camera.z << " " << ah << " " << av << " " << gWorld->getAreaID() << std::endl;
-      f.close();
+      //change selected model size
+      keys = 1;
     }
   }
-  else
+
+  if (e->keysym.sym == SDLK_KP_MINUS || e->keysym.sym == SDLK_MINUS)
   {
-    // key UP
-    if (e->keysym.sym == SDLK_LSHIFT || e->keysym.sym == SDLK_RSHIFT)
-      Environment::getInstance()->ShiftDown = false;
-
-    if (e->keysym.sym == SDLK_LALT || e->keysym.sym == SDLK_RALT)
-      Environment::getInstance()->AltDown = false;
-
-    if (e->keysym.sym == SDLK_LCTRL || e->keysym.sym == SDLK_RCTRL)
-      Environment::getInstance()->CtrlDown = false;
-
-    if (e->keysym.sym == SDLK_SPACE)
-      Environment::getInstance()->SpaceDown = false;
-
-    // movement
-    if (e->keysym.sym == SDLK_w)
+    if (_mod_alt_down)
     {
-      key_w = false;
-      if (!(leftMouse && rightMouse) && moving > 0.0f) {
-
-        moving = 0.0f;
+      switch (terrainMode)
+      {
+      case 0:
+        mainGui->terrainTool->changeRadius(-0.01f);
+        break;
+      case 1:
+        mainGui->flattenTool->changeRadius(-0.01f);
+        break;
+      case 2:
+        textureBrush.setRadius(std::max(0.0f, textureBrush.getRadius() - 0.1f));
+        paint_brush->setValue(textureBrush.getRadius() / 100);
+        break;
+      case 6:
+        tile_index tile(gWorld->camera);
+        gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) - 2.0f));
+        mainGui->guiWater->updateData();
+        break;
       }
     }
+    else if ((!gWorld->HasSelection() || (gWorld->HasSelection() && gWorld->GetCurrentSelection()->which() == eEntry_MapChunk)))
+    {
+      if (terrainMode == 6)
+      {
+        tile_index tile(gWorld->camera);
+        if (_mod_shift_down)
+        {
+          gWorld->setWaterTrans(tile, static_cast<unsigned char>(std::floor(static_cast<float>(gWorld->getWaterTrans(tile))) - 1));
+        }
+        else if (_mod_ctrl_down)
+        {
+          gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) - 5.0f));
+        }
+        else
+        {
+          gWorld->setWaterHeight(tile, std::ceil(gWorld->getWaterHeight(tile) - 1.0f));
+        }
 
-    if (e->keysym.sym == SDLK_s && moving < 0.0f) {
+        mainGui->guiWater->updateData();
+      }
+      else if (_mod_shift_down)
+      {
+        gWorld->fogdistance -= 60.0f;// fog change only when no model is selected!
+      }
 
+    }
+    else
+    {
+      //change selected model size
+      keys = -1;
+    }
+  }
+
+  // doodads set
+  if (e->keysym.sym >= SDLK_0 && e->keysym.sym <= SDLK_9)
+  {
+    if (gWorld->IsSelection(eEntry_WMO))
+    {
+      boost::get<selected_wmo_type> (*gWorld->GetCurrentSelection())->doodadset = e->keysym.sym - SDLK_0;
+    }
+    else if (_mod_shift_down)
+    {
+      if (e->keysym.sym == SDLK_1)
+        movespd = 15.0f;
+      if (e->keysym.sym == SDLK_2)
+        movespd = 50.0f;
+      if (e->keysym.sym == SDLK_3)
+        movespd = 200.0f;
+      if (e->keysym.sym == SDLK_4)
+        movespd = 800.0f;
+    }
+    else if (_mod_alt_down)
+    {
+      if (e->keysym.sym == SDLK_1)
+        mainGui->G1->setValue(0.01f);
+      if (e->keysym.sym == SDLK_2)
+        mainGui->G1->setValue(0.25f);
+      if (e->keysym.sym == SDLK_3)
+        mainGui->G1->setValue(0.50f);
+      if (e->keysym.sym == SDLK_4)
+        mainGui->G1->setValue(0.75f);
+      if (e->keysym.sym == SDLK_5)
+        mainGui->G1->setValue(0.99f);
+    }
+    else if (e->keysym.sym >= SDLK_1 && e->keysym.sym <= SDLK_9)
+    {
+      terrainMode = e->keysym.sym - SDLK_1;
+      mainGui->guiToolbar->IconSelect(terrainMode);
+    }
+    else if (e->keysym.sym == SDLK_0)
+    {
+      terrainMode = 9; // object editor
+      mainGui->guiToolbar->IconSelect(terrainMode);
+    }
+  }
+}
+
+void MapView::keyReleaseEvent (SDL_KeyboardEvent* e)
+{
+  if (e->keysym.mod & KMOD_CAPS)
+    mainGui->capsWarning->show();
+  else
+    mainGui->capsWarning->hide();
+
+  if (e->keysym.sym == SDLK_LSHIFT || e->keysym.sym == SDLK_RSHIFT)
+    _mod_shift_down = false;
+
+  if (e->keysym.sym == SDLK_LALT || e->keysym.sym == SDLK_RALT)
+    _mod_alt_down = false;
+
+  if (e->keysym.sym == SDLK_LCTRL || e->keysym.sym == SDLK_RCTRL)
+    _mod_ctrl_down = false;
+
+  if (e->keysym.sym == SDLK_SPACE)
+    _mod_space_down = false;
+
+  // movement
+  if (e->keysym.sym == SDLK_w)
+  {
+    key_w = false;
+    if (!(leftMouse && rightMouse) && moving > 0.0f)
+    {
       moving = 0.0f;
     }
-
-    if (e->keysym.sym == SDLK_UP || e->keysym.sym == SDLK_DOWN)
-      lookat = 0.0f;
-
-    if (e->keysym.sym == SDLK_LEFT || e->keysym.sym == SDLK_RIGHT)
-      turn = 0.0f;
-
-    if (e->keysym.sym == SDLK_d && strafing > 0.0f) {
-
-      strafing = 0.0f;
-    }
-
-    if (e->keysym.sym == SDLK_a && strafing < 0.0f) {
-
-      strafing = 0.0f;
-    }
-
-    if (e->keysym.sym == SDLK_q && updown > 0.0f)
-      updown = 0.0f;
-
-    if (e->keysym.sym == SDLK_e && updown < 0.0f)
-      updown = 0.0f;
-
-    if (e->keysym.sym == SDLK_KP8)
-      keyx = 0;
-
-    if (e->keysym.sym == SDLK_KP2)
-      keyx = 0;
-
-    if (e->keysym.sym == SDLK_KP6)
-      keyz = 0;
-
-    if (e->keysym.sym == SDLK_KP4)
-      keyz = 0;
-
-    if (e->keysym.sym == SDLK_KP1)
-      keyy = 0;
-
-    if (e->keysym.sym == SDLK_KP3)
-      keyy = 0;
-
-    if (e->keysym.sym == SDLK_KP7)
-      keyr = 0;
-
-    if (e->keysym.sym == SDLK_KP9)
-      keyr = 0;
-
-    if (e->keysym.sym == SDLK_KP_MINUS || e->keysym.sym == SDLK_MINUS || e->keysym.sym == SDLK_KP_PLUS || e->keysym.sym == SDLK_PLUS)
-      keys = 0;
   }
+
+  if (e->keysym.sym == SDLK_s && moving < 0.0f)
+  {
+    moving = 0.0f;
+  }
+
+  if (e->keysym.sym == SDLK_UP || e->keysym.sym == SDLK_DOWN)
+    lookat = 0.0f;
+
+  if (e->keysym.sym == SDLK_LEFT || e->keysym.sym == SDLK_RIGHT)
+    turn = 0.0f;
+
+  if (e->keysym.sym == SDLK_d && strafing > 0.0f)
+  {
+    strafing = 0.0f;
+  }
+
+  if (e->keysym.sym == SDLK_a && strafing < 0.0f)
+  {
+    strafing = 0.0f;
+  }
+
+  if (e->keysym.sym == SDLK_q && updown > 0.0f)
+    updown = 0.0f;
+
+  if (e->keysym.sym == SDLK_e && updown < 0.0f)
+    updown = 0.0f;
+
+  if (e->keysym.sym == SDLK_KP8)
+    keyx = 0;
+
+  if (e->keysym.sym == SDLK_KP2)
+    keyx = 0;
+
+  if (e->keysym.sym == SDLK_KP6)
+    keyz = 0;
+
+  if (e->keysym.sym == SDLK_KP4)
+    keyz = 0;
+
+  if (e->keysym.sym == SDLK_KP1)
+    keyy = 0;
+
+  if (e->keysym.sym == SDLK_KP3)
+    keyy = 0;
+
+  if (e->keysym.sym == SDLK_KP7)
+    keyr = 0;
+
+  if (e->keysym.sym == SDLK_KP9)
+    keyr = 0;
+
+  if (e->keysym.sym == SDLK_KP_MINUS || e->keysym.sym == SDLK_MINUS || e->keysym.sym == SDLK_KP_PLUS || e->keysym.sym == SDLK_PLUS)
+    keys = 0;
 }
 
 void MapView::inserObjectFromExtern(int model)
 {
-  InsertObject(0, model);
+  InsertObject (model);
 }
 
 
 void MapView::mousemove(SDL_MouseMotionEvent *e)
 {
-  mainGui->minimapWindow->mousemove(e);
-  if ((look && !(Environment::getInstance()->ShiftDown || Environment::getInstance()->CtrlDown || Environment::getInstance()->AltDown)) || video.fullscreen())
+  if ((look && !(_mod_shift_down || _mod_ctrl_down || _mod_alt_down)) || video.fullscreen())
   {
     ah += e->xrel / XSENS;
     av += mousedir * e->yrel / YSENS;
@@ -2906,13 +2276,13 @@ void MapView::mousemove(SDL_MouseMotionEvent *e)
     mv = 0.0f;
   }
 
-  if (Environment::getInstance()->ShiftDown || Environment::getInstance()->CtrlDown || Environment::getInstance()->AltDown)
+  if (_mod_shift_down || _mod_ctrl_down || _mod_alt_down)
   {
     rh = e->xrel / XSENS * 5.0f;
     rv = e->yrel / YSENS * 5.0f;
   }
 
-  if (rightMouse && Environment::getInstance()->AltDown)
+  if (rightMouse && _mod_alt_down)
   {
     if (terrainMode == 2)
     {
@@ -2922,47 +2292,41 @@ void MapView::mousemove(SDL_MouseMotionEvent *e)
     }
   }
 
-  if (leftMouse && Environment::getInstance()->AltDown)
+  if (leftMouse && _mod_alt_down)
   {
     switch (terrainMode)
     {
     case 0:
-      groundBrushRadius = std::max(0.0f, std::min(1000.0f, groundBrushRadius + e->xrel / XSENS));
-      ground_brush_radius->setValue(groundBrushRadius / 1000.0f);
+      mainGui->terrainTool->changeRadius(e->xrel / XSENS);
       break;
     case 1:
-      blurBrushRadius = std::max(0.0f, std::min(1000.0f, blurBrushRadius + e->xrel / XSENS));
-      blur_brush->setValue(blurBrushRadius / 1000.0f);
+      mainGui->flattenTool->changeRadius(e->xrel / XSENS);
       break;
     case 2:
       textureBrush.setRadius(std::max(0.0f, std::min(100.0f, textureBrush.getRadius() + e->xrel / XSENS)));
       paint_brush->setValue(textureBrush.getRadius() / 100.0f);
       break;
     case 8:
-      shaderRadius = std::max(0.0f, std::min(1000.0f, shaderRadius + e->xrel / XSENS));
-      shader_radius->setValue(shaderRadius / 1000.0f);
+      mainGui->shaderTool->changeRadius(e->xrel / XSENS);
       break;
     }
   }
 
-  if (leftMouse && Environment::getInstance()->SpaceDown)
+  if (leftMouse && _mod_space_down)
   {
     switch (terrainMode)
     {
     case 0:
-      groundBrushSpeed = std::max(0.0f, std::min(10.0f, groundBrushSpeed + e->xrel / 30.0f));
-      ground_brush_speed->setValue(groundBrushSpeed / 10.0f);
+      mainGui->terrainTool->changeSpeed(e->xrel / 30.0f);
       break;
     case 1:
-      groundBlurSpeed = std::max(0.0f, std::min(10.0f, groundBlurSpeed + e->xrel / 30.0f));
-      ground_blur_speed->setValue(groundBlurSpeed / 10.0f);
+      mainGui->flattenTool->changeSpeed(e->xrel / 30.0f);
       break;
     case 2:
       mainGui->paintPressureSlider->setValue(std::max(0.0f, std::min(1.0f, mainGui->paintPressureSlider->value + e->xrel / 300.0f)));
       break;
     case 8:
-      shaderSpeed = std::max(0.0f, std::min(10.0f, shaderSpeed + e->xrel / 30.0f));
-      shader_speed->setValue(shaderSpeed / 10.0f);
+      mainGui->shaderTool->changeSpeed(e->xrel / XSENS);
       break;
     }
   }
@@ -2972,27 +2336,22 @@ void MapView::mousemove(SDL_MouseMotionEvent *e)
     LastClicked->processLeftDrag((float)(e->x - 4), (float)(e->y - 4), (float)(e->xrel), (float)(e->yrel));
   }
 
-  if (mViewMode == eViewMode_2D && leftMouse && Environment::getInstance()->AltDown && Environment::getInstance()->ShiftDown)
+  if (mViewMode == eViewMode_2D && leftMouse && _mod_alt_down && _mod_shift_down)
   {
     strafing = ((e->xrel / XSENS) / -1) * 5.0f;
     moving = (e->yrel / YSENS) * 5.0f;
   }
 
-  if (mViewMode == eViewMode_2D && rightMouse && Environment::getInstance()->ShiftDown)
+  if (mViewMode == eViewMode_2D && rightMouse && _mod_shift_down)
   {
     updown = (e->yrel / YSENS);
   }
 
-
+  mainGui->mouse_moved (e->x, e->y);
 
   Environment::getInstance()->screenX = MouseX = e->x;
   Environment::getInstance()->screenY = MouseY = e->y;
   checkWaterSave();
-}
-
-void MapView::addModelFromTextSelection(int id)
-{
-  InsertObject(0, id);
 }
 
 void MapView::selectModel(selection_type entry)
@@ -3000,188 +2359,165 @@ void MapView::selectModel(selection_type entry)
   mainGui->objectEditor->copy(entry);
 }
 
-void MapView::mouseclick(SDL_MouseButtonEvent *e)
+void MapView::mousePressEvent (SDL_MouseButtonEvent *e)
 {
-  if (e->type == SDL_MOUSEBUTTONDOWN)
+  switch (e->button)
   {
-    switch (e->button)
+  case SDL_BUTTON_LEFT:
+    leftMouse = true;
+    break;
+
+  case SDL_BUTTON_RIGHT:
+    rightMouse = true;
+    break;
+
+  case SDL_BUTTON_MIDDLE:
+    if (gWorld->HasSelection())
     {
-    case SDL_BUTTON_LEFT:
-      leftMouse = true;
-      break;
-
-    case SDL_BUTTON_RIGHT:
-      rightMouse = true;
-      break;
-
-    case SDL_BUTTON_MIDDLE:
-      if (gWorld->HasSelection())
+      MoveObj = true;
+      auto selection = gWorld->GetCurrentSelection();
+      math::vector_3d objPos;
+      if (selection->which() == eEntry_WMO)
       {
-        MoveObj = true;
-        auto selection = gWorld->GetCurrentSelection();
-        math::vector_3d objPos;
-        if (selection->which() == eEntry_WMO)
-        {
-          objPos = boost::get<selected_wmo_type> (*selection)->pos;
-        }
-        else if (selection->which() == eEntry_Model)
-        {
-          objPos = boost::get<selected_model_type> (*selection)->pos;
-        }
-
-        objMoveOffset = Environment::getInstance()->get_cursor_pos() - objPos;
+        objPos = boost::get<selected_wmo_type> (*selection)->pos;
+      }
+      else if (selection->which() == eEntry_Model)
+      {
+        objPos = boost::get<selected_model_type> (*selection)->pos;
       }
 
-      break;
-
-    case SDL_BUTTON_WHEELUP:
-      if (terrainMode == 1)
-      {
-        if (Environment::getInstance()->AltDown)
-        {
-          flattenOrientation += Environment::getInstance()->CtrlDown ? 1.0f : 10.0f;
-          if (flattenOrientation > 360.0f)
-            flattenOrientation = 0.0f;
-          flatten_orientation->setValue(flattenOrientation / 360);
-        }
-        else if (Environment::getInstance()->ShiftDown)
-        {
-          flattenAngle += Environment::getInstance()->CtrlDown ? 0.2f : 2.0f;
-          if (flattenAngle > 89.0f)
-            flattenAngle = 89.0f;
-          flatten_angle->setValue(flattenAngle / 90);
-        }
-        else if (Environment::getInstance()->SpaceDown)
-        {
-          flattenRelativePos.y += 1;
-          flatten_relative_y->value(misc::floatToStr(flattenRelativePos.y));
-        }
-      }
-      else if (terrainMode == 2)
-      {
-        if (Environment::getInstance()->SpaceDown)
-        {
-          brushLevel = std::min(255.0f, brushLevel + 10.0f);
-          mainGui->G1->setValue((255.0f - brushLevel) / 255.0f);
-        }
-        else if (Environment::getInstance()->AltDown)
-        {
-          brushSpraySize = std::min(40.0f, brushSpraySize + 2.0f);
-          spray_size->setValue(brushSpraySize / 40.0f);
-        }
-        else if (Environment::getInstance()->ShiftDown)
-        {
-          brushSprayPressure = std::min(100.0f, brushSprayPressure + 2.5f);
-          spray_pressure->setValue(brushSprayPressure / 100.0f);
-        }
-      }
-      break;
-    case SDL_BUTTON_WHEELDOWN:
-      if (terrainMode == 1)
-      {
-        if (Environment::getInstance()->AltDown)
-        {
-          flattenOrientation -= Environment::getInstance()->CtrlDown ? 1.0f : 10.0f;
-          if (flattenOrientation < 0.0f)
-            flattenOrientation = 360.0f;
-          flatten_orientation->setValue(flattenOrientation / 360);
-        }
-        else if (Environment::getInstance()->ShiftDown)
-        {
-          flattenAngle -= Environment::getInstance()->CtrlDown ? 0.2f : 2.0f;;
-          if (flattenAngle < 0.0f)
-            flattenAngle = 0.0f;
-          flatten_angle->setValue(flattenAngle / 90);
-        }
-        else if (Environment::getInstance()->SpaceDown)
-        {
-          flattenRelativePos.y -= 1;
-          flatten_relative_y->value(misc::floatToStr(flattenRelativePos.y));
-        }
-      }
-      else if (terrainMode == 2)
-      {
-        if (Environment::getInstance()->SpaceDown)
-        {
-          brushLevel = std::max(0.0f, brushLevel - 10.0f);
-          mainGui->G1->setValue((255.0f - brushLevel) / 255.0f);
-        }
-        else if (Environment::getInstance()->AltDown)
-        {
-          brushSpraySize = std::max(1.0f, brushSpraySize - 2.0f);
-          spray_size->setValue(brushSpraySize / 40.0f);
-        }
-        else if (Environment::getInstance()->ShiftDown)
-        {
-          brushSprayPressure = std::max(0.0f, brushSprayPressure - 2.5f);
-          spray_pressure->setValue(brushSprayPressure / 100.0f);
-        }
-      }
-      break;
+      objMoveOffset = Environment::getInstance()->get_cursor_pos() - objPos;
     }
 
-    if (leftMouse && rightMouse)
+    break;
+
+  case SDL_BUTTON_WHEELUP:
+    if (terrainMode == 1)
     {
-      // Both buttons
-      moving = 1.0f;
-    }
-    else if (leftMouse)
-    {
-      LastClicked = mainGui->processLeftClick(static_cast<float>(MouseX), static_cast<float>(MouseY));
-      if (mViewMode == eViewMode_3D && !LastClicked)
+      if (_mod_alt_down)
       {
-        doSelection(false);
+        mainGui->flattenTool->changeOrientation(_mod_ctrl_down ? 1.0f : 10.0f);
+      }
+      else if (_mod_shift_down)
+      {
+        mainGui->flattenTool->changeAngle(_mod_ctrl_down ? 0.2f : 2.0f);
+      }
+      else if (_mod_space_down)
+      {
+        mainGui->flattenTool->changeHeight(1.0f);
       }
     }
-    else if (rightMouse)
+    else if (terrainMode == 2)
     {
-      look = true;
-    }
-  }
-  else if (e->type == SDL_MOUSEBUTTONUP)
-  {
-    switch (e->button)
-    {
-    case SDL_BUTTON_LEFT:
-      leftMouse = false;
-
-      if (LastClicked)
-        LastClicked->processUnclick();
-
-      if (!key_w && moving > 0.0f)
-        moving = 0.0f;
-
-      if (mViewMode == eViewMode_2D)
+      if (_mod_space_down)
       {
-        strafing = 0;
-        moving = 0;
+        brushLevel = std::min(255.0f, brushLevel + 10.0f);
+        mainGui->G1->setValue((255.0f - brushLevel) / 255.0f);
       }
-      break;
-
-    case SDL_BUTTON_RIGHT:
-      rightMouse = false;
-
-      look = false;
-
-      if (!key_w && moving > 0.0f)
-        moving = 0.0f;
-
-      if (mViewMode == eViewMode_2D)
-        updown = 0;
-
-      break;
-
-    case SDL_BUTTON_MIDDLE:
-      MoveObj = false;
-      break;
+      else if (_mod_alt_down)
+      {
+        brushSpraySize = std::min(40.0f, brushSpraySize + 2.0f);
+        spray_size->setValue(brushSpraySize / 40.0f);
+      }
+      else if (_mod_shift_down)
+      {
+        brushSprayPressure = std::min(100.0f, brushSprayPressure + 2.5f);
+        spray_pressure->setValue(brushSprayPressure / 100.0f);
+      }
     }
+    break;
+  case SDL_BUTTON_WHEELDOWN:
+    if (terrainMode == 1)
+    {
+      if (_mod_alt_down)
+      {
+        mainGui->flattenTool->changeOrientation(_mod_ctrl_down ? -1.0f : -10.0f);
+      }
+      else if (_mod_shift_down)
+      {
+        mainGui->flattenTool->changeAngle(_mod_ctrl_down ? -0.2f : -2.0f);
+      }
+      else if (_mod_space_down)
+      {
+        mainGui->flattenTool->changeHeight(-1.0f);
+      }
+    }
+    else if (terrainMode == 2)
+    {
+      if (_mod_space_down)
+      {
+        brushLevel = std::max(0.0f, brushLevel - 10.0f);
+        mainGui->G1->setValue((255.0f - brushLevel) / 255.0f);
+      }
+      else if (_mod_alt_down)
+      {
+        brushSpraySize = std::max(1.0f, brushSpraySize - 2.0f);
+        spray_size->setValue(brushSpraySize / 40.0f);
+      }
+      else if (_mod_shift_down)
+      {
+        brushSprayPressure = std::max(0.0f, brushSprayPressure - 2.5f);
+        spray_pressure->setValue(brushSprayPressure / 100.0f);
+      }
+    }
+    break;
   }
 
-  // check menu settings and switch hole mode
-  //! \todo why the hell is this here?
-  if (terrainMode != 3)
+  if (leftMouse && rightMouse)
   {
-    Environment::getInstance()->view_holelines = Settings::getInstance()->holelinesOn;
+    // Both buttons
+    moving = 1.0f;
+  }
+  else if (leftMouse)
+  {
+    LastClicked = mainGui->processLeftClick(static_cast<float>(MouseX), static_cast<float>(MouseY));
+    if (mViewMode == eViewMode_3D && !LastClicked)
+    {
+      doSelection(false);
+    }
+  }
+  else if (rightMouse)
+  {
+    look = true;
+  }
+}
+
+void MapView::mouseReleaseEvent (SDL_MouseButtonEvent* e)
+{
+  switch (e->button)
+  {
+  case SDL_BUTTON_LEFT:
+    leftMouse = false;
+
+    if (LastClicked)
+      LastClicked->processUnclick();
+
+    if (!key_w && moving > 0.0f)
+      moving = 0.0f;
+
+    if (mViewMode == eViewMode_2D)
+    {
+      strafing = 0;
+      moving = 0;
+    }
+    break;
+
+  case SDL_BUTTON_RIGHT:
+    rightMouse = false;
+
+    look = false;
+
+    if (!key_w && moving > 0.0f)
+      moving = 0.0f;
+
+    if (mViewMode == eViewMode_2D)
+      updown = 0;
+
+    break;
+
+  case SDL_BUTTON_MIDDLE:
+    MoveObj = false;
+    break;
   }
 }
 

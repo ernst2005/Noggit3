@@ -1,34 +1,28 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
 
-#include "MapChunk.h"
+#include <math/quaternion.hpp>
+#include <math/vector_3d.hpp>
+#include <noggit/Brush.h>
+#include <noggit/Environment.h>
+#include <noggit/Frustum.h>
+#include <noggit/Liquid.h>
+#include <noggit/Log.h>
+#include <noggit/MapChunk.h>
+#include <noggit/MapHeaders.h>
+#include <noggit/Misc.h>
+#include <noggit/World.h>
+#include <noggit/alphamap.hpp>
+#include <noggit/texture_set.hpp>
+#include <noggit/tool_enums.hpp>
+#include <noggit/ui/TexturingGUI.h>
+#include <opengl/scoped.hpp>
+
 #include <algorithm>
 #include <iostream>
 #include <map>
-#include "Brush.h"
-#include "Environment.h"
-#include "Frustum.h"
-#include "Liquid.h"
-#include "Log.h"
-#include "MapHeaders.h"
-#include "Misc.h"
-#include "math/quaternion.hpp"
-#include "texture_set.hpp"
-#include "UITexturingGUI.h"
-#include "math/vector_3d.hpp"
-#include "World.h"
-#include "alphamap.hpp"
-#include <opengl/scoped.hpp>
 
 extern int terrainMode;
 
-static const int HEIGHT_TOP = 1000;
-static const int HEIGHT_MID = 600;
-static const int HEIGHT_LOW = 300;
-static const int HEIGHT_ZERO = 0;
-static const int HEIGHT_SHALLOW = -100;
-static const int HEIGHT_DEEP = -250;
-
-bool drawFlags = false;
 bool DrawMapContour = false;
 
 GLuint Contour = 0;
@@ -112,10 +106,10 @@ void CreateStrips()
 }
 
 MapChunk::MapChunk(MapTile *maintile, MPQFile *f, bool bigAlpha)
-  : textureSet(new TextureSet)
-  , mt(maintile)
-  , mBigAlpha(bigAlpha)
+  : mBigAlpha(bigAlpha)
   , water(false)
+  , mt(maintile)
+  , textureSet(new TextureSet)
 {
   uint32_t fourcc;
   uint32_t size;
@@ -264,14 +258,9 @@ MapChunk::MapChunk(MapTile *maintile, MPQFile *f, bool bigAlpha)
   gl.genBuffers(1, &mccvEntry);
   gl.genBuffers (1, &indices);
 
-  gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
-
-  gl.bindBuffer(GL_ARRAY_BUFFER, normals);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mNormals), mNormals, GL_STATIC_DRAW);
-
-  gl.bindBuffer(GL_ARRAY_BUFFER, mccvEntry);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mccv), mccv, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (normals, sizeof(mNormals), mNormals, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (mccvEntry, sizeof(mccv), mccv, GL_STATIC_DRAW);
 
   initStrip();
 
@@ -333,11 +322,8 @@ MapChunk::MapChunk(MapTile *maintile, MPQFile *f, bool bigAlpha)
   gl.genBuffers(1, &minimap);
   gl.genBuffers(1, &minishadows);
 
-  gl.bindBuffer(GL_ARRAY_BUFFER, minimap);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mMinimap), mMinimap, GL_STATIC_DRAW);
-
-  gl.bindBuffer(GL_ARRAY_BUFFER, minishadows);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mFakeShadows), mFakeShadows, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (minimap, sizeof(mMinimap), mMinimap, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (minishadows, sizeof(mFakeShadows), mFakeShadows, GL_STATIC_DRAW);
 }
 
 void MapChunk::ClearShader()
@@ -347,8 +333,7 @@ void MapChunk::ClearShader()
     mccv[i] = math::vector_3d(1.0f, 1.0f, 1.0f);
   }
 
-  gl.bindBuffer(GL_ARRAY_BUFFER, mccvEntry);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mccv), mccv, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (mccvEntry, sizeof(mccv), mccv, GL_STATIC_DRAW);
 }
 
 void MapChunk::drawTextures()
@@ -428,11 +413,8 @@ void MapChunk::drawTextures()
   opengl::texture::set_active_texture (1);
   opengl::texture::disable_texture();
 
-  gl.bindBuffer(GL_ARRAY_BUFFER, minimap);
-  gl.vertexPointer(3, GL_FLOAT, 0, 0);
-
-  gl.bindBuffer(GL_ARRAY_BUFFER, minishadows);
-  gl.colorPointer(4, GL_FLOAT, 0, 0);
+  gl.vertexPointer (minimap, 3, GL_FLOAT, 0, 0);
+  gl.colorPointer (minishadows, 4, GL_FLOAT, 0, 0);
 
   gl.drawElements(GL_TRIANGLE_STRIP, stripsize2, GL_UNSIGNED_SHORT, gWorld->mapstrip2);
 }
@@ -475,25 +457,14 @@ void MapChunk::initStrip()
   }
   striplen = static_cast<int>(s - strip);
 
-  gl.bindBuffer (GL_ELEMENT_ARRAY_BUFFER, indices);
+  opengl::scoped::buffer_binder<GL_ELEMENT_ARRAY_BUFFER> const _ (indices);
   gl.bufferData (GL_ELEMENT_ARRAY_BUFFER, striplen * sizeof (StripType), strip, GL_STATIC_DRAW);
 }
 
 MapChunk::~MapChunk()
 {
-  //! \todo random crash here.
-  /*
-  3   ???                                 0x0000000101930340 0x0 + 4321379136
-  4   noggit                              0x00000001000298b8 _ZN8MapChunkD1Ev + 196
-  5   noggit                              0x0000000100032ce4 _ZN7MapTileD1Ev + 266
-  6   noggit                              0x00000001000bbadd _ZN5WorldD1Ev + 247
-  7   noggit                              0x0000000100044500 _ZN7MapViewD0Ev + 106
-  8   noggit                              0x000000010007cc66 SDL_main + 8004
-  */
-
   delete textureSet;
 
-  // delete VBOs
   gl.deleteBuffers(1, &vertices);
   gl.deleteBuffers(1, &normals);
   gl.deleteBuffers(1, &mccvEntry);
@@ -537,7 +508,22 @@ float MapChunk::getMinHeight()
     min = std::min (min, vertex.y);
   }
 
-	return min;
+  return min;
+}
+
+void MapChunk::clearHeight()
+{
+  for (int i = 0; i < mapbufsize; ++i)
+  {
+    mVertices[i].y = 0.0f;
+  }
+
+  vmin.y = 0.0f;
+  vmax.y = 0.0f;
+
+  gl.bufferData<GL_ARRAY_BUFFER>
+    (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+
 }
 
 void MapChunk::drawLines (Frustum const& frustum)
@@ -553,8 +539,7 @@ void MapChunk::drawLines (Frustum const& frustum)
   if (mydist > (mapdrawdistance * mapdrawdistance))
     return;
 
-  gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-  gl.vertexPointer(3, GL_FLOAT, 0, 0);
+  gl.vertexPointer (vertices, 3, GL_FLOAT, 0, 0);
 
   opengl::texture::disable_texture();
 
@@ -646,16 +631,14 @@ void MapChunk::draw (Frustum const& frustum)
   }
 
   // setup vertex buffers
-  gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-  gl.vertexPointer(3, GL_FLOAT, 0, 0);
-  gl.bindBuffer(GL_ARRAY_BUFFER, normals);
-  gl.normalPointer(GL_FLOAT, 0, 0);
-  gl.bindBuffer(GL_ELEMENT_ARRAY_BUFFER, indices);
+  gl.vertexPointer (vertices, 3, GL_FLOAT, 0, 0);
+  gl.normalPointer (normals, GL_FLOAT, 0, 0);
+
+  opengl::scoped::buffer_binder<GL_ELEMENT_ARRAY_BUFFER> const index_buffer (indices);
 
   if (hasMCCV)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, mccvEntry);
-    gl.colorPointer(3, GL_FLOAT, 0, 0);
+    gl.colorPointer (mccvEntry, 3, GL_FLOAT, 0, 0);
     gl.enableClientState(GL_COLOR_ARRAY);
   }
 
@@ -777,9 +760,9 @@ void MapChunk::draw (Frustum const& frustum)
       opengl::scoped::bool_setter<GL_DEPTH_TEST, GL_FALSE> const depth_test;
 
       gl.begin(GL_TRIANGLES);
-      gl.vertex3fv(mVertices[gWorld->mapstrip2[poly + 0]]);
-      gl.vertex3fv(mVertices[gWorld->mapstrip2[poly + 1]]);
-      gl.vertex3fv(mVertices[gWorld->mapstrip2[poly + 2]]);
+      gl.vertex3fv(mVertices[strip[poly + 0]]);
+      gl.vertex3fv(mVertices[strip[poly + 1]]);
+      gl.vertex3fv(mVertices[strip[poly + 2]]);
       gl.end();
     }
   }
@@ -809,7 +792,6 @@ void MapChunk::draw (Frustum const& frustum)
     gl.polygonMode(GL_FRONT_AND_BACK, GL_FILL);
   }
 
-  gl.bindBuffer (GL_ELEMENT_ARRAY_BUFFER, 0);
   gl.enable(GL_LIGHTING);
   gl.color4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
@@ -840,49 +822,9 @@ void MapChunk::intersect (math::ray const& ray, selection_result* results)
        )
     {
       results->emplace_back
-        (*distance, selected_chunk_type (this, i / 3, ray.position (*distance)));
+        (*distance, selected_chunk_type (this, i, ray.position (*distance)));
     }
   }
-}
-
-void MapChunk::getSelectionCoord(float *x, float *z)
-{
-  int Poly = boost::get<selected_chunk_type> (*gWorld->GetCurrentSelection()).triangle;
-  if (Poly + 2 > stripsize2)
-  {
-    *x = -1000000.0f;
-    *z = -1000000.0f;
-    return;
-  }
-  *x = (mVertices[gWorld->mapstrip2[Poly + 0]].x + mVertices[gWorld->mapstrip2[Poly + 1]].x + mVertices[gWorld->mapstrip2[Poly + 2]].x) / 3;
-  *z = (mVertices[gWorld->mapstrip2[Poly + 0]].z + mVertices[gWorld->mapstrip2[Poly + 1]].z + mVertices[gWorld->mapstrip2[Poly + 2]].z) / 3;
-}
-
-float MapChunk::getSelectionHeight()
-{
-  int Poly = boost::get<selected_chunk_type> (*gWorld->GetCurrentSelection()).triangle;
-  if (Poly + 2 < stripsize2)
-    return (mVertices[gWorld->mapstrip2[Poly + 0]].y + mVertices[gWorld->mapstrip2[Poly + 1]].y + mVertices[gWorld->mapstrip2[Poly + 2]].y) / 3;
-  LogError << "Getting selection height fucked up because the selection was bad. " << Poly << "%i with striplen of " << stripsize2 << "." << std::endl;
-  return 0.0f;
-}
-
-math::vector_3d MapChunk::GetSelectionPosition()
-{
-  int Poly = boost::get<selected_chunk_type> (*gWorld->GetCurrentSelection()).triangle;
-  if (Poly + 2 > stripsize2)
-  {
-    LogError << "Getting selection position fucked up because the selection was bad. " << Poly << "%i with striplen of " << stripsize2 << "." << std::endl;
-    return math::vector_3d(-1000000.0f, -1000000.0f, -1000000.0f);
-  }
-
-  math::vector_3d lPosition;
-  lPosition = math::vector_3d(mVertices[gWorld->mapstrip2[Poly + 0]]);
-  lPosition += math::vector_3d(mVertices[gWorld->mapstrip2[Poly + 1]]);
-  lPosition += math::vector_3d(mVertices[gWorld->mapstrip2[Poly + 2]]);
-  lPosition *= 0.3333333f;
-
-  return lPosition;
 }
 
 void MapChunk::recalcNorms()
@@ -929,8 +871,7 @@ void MapChunk::recalcNorms()
     Norm.normalize();
     mNormals[i] = Norm;
   }
-  gl.bindBuffer(GL_ARRAY_BUFFER, normals);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mNormals), mNormals, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (normals, sizeof(mNormals), mNormals, GL_STATIC_DRAW);
 
   float ShadowAmount;
   for (int j = 0; j<mapbufsize; ++j)
@@ -949,8 +890,7 @@ void MapChunk::recalcNorms()
     mFakeShadows[j].w = ShadowAmount;
   }
 
-  gl.bindBuffer(GL_ARRAY_BUFFER, minishadows);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(mFakeShadows), mFakeShadows, GL_STATIC_DRAW);
+  gl.bufferData<GL_ARRAY_BUFFER> (minishadows, sizeof(mFakeShadows), mFakeShadows, GL_STATIC_DRAW);
 }
 
 bool MapChunk::changeTerrain(float x, float z, float change, float radius, int BrushType)
@@ -958,20 +898,16 @@ bool MapChunk::changeTerrain(float x, float z, float change, float radius, int B
   float dist, xdiff, zdiff;
   bool changed = false;
 
-  xdiff = xbase - x + CHUNKSIZE / 2;
-  zdiff = zbase - z + CHUNKSIZE / 2;
-  dist = std::sqrt(xdiff*xdiff + zdiff*zdiff);
-
-  if (dist > (radius + MAPCHUNK_RADIUS))
-    return changed;
   vmin.y = 9999999.0f;
   vmax.y = -9999999.0f;
   for (int i = 0; i < mapbufsize; ++i)
   {
     xdiff = mVertices[i].x - x;
     zdiff = mVertices[i].z - z;
-    if (BrushType == 5) {
-      if ((std::abs(xdiff) < std::abs(radius / 2)) && (std::abs(zdiff) < std::abs(radius / 2))) {
+    if (BrushType == eTerrainType_Quadra)
+    {
+      if ((std::abs(xdiff) < std::abs(radius / 2)) && (std::abs(zdiff) < std::abs(radius / 2))) 
+      {
         mVertices[i].y += change;
         changed = true;
       }
@@ -981,21 +917,30 @@ bool MapChunk::changeTerrain(float x, float z, float change, float radius, int B
       dist = std::sqrt(xdiff*xdiff + zdiff*zdiff);
       if (dist < radius)
       {
-        if (BrushType == 0)//Flat
-          mVertices[i].y += change;
-
-        else if (BrushType == 1)//Linear
-          mVertices[i].y += change*(1.0f - dist / radius);
-
-        else if (BrushType == 2)//Smooth
-          mVertices[i].y += change / (1.0f + dist / radius);
-
-        else if (BrushType == 3) //x^2
-          mVertices[i].y += change*((dist / radius)*(dist / radius) + dist / radius + 1.0f);
-
-        else if (BrushType == 4) //cos
-          mVertices[i].y += change*cos(dist / radius);
         changed = true;
+
+        switch (BrushType)
+        {
+          case eTerrainType_Flat:
+            mVertices[i].y += change;
+            break;
+          case eTerrainType_Linear:
+            mVertices[i].y += change*(1.0f - dist / radius);
+            break;
+          case eTerrainType_Smooth:
+            mVertices[i].y += change / (1.0f + dist / radius);
+            break;
+          case eTerrainType_Polynom:
+            mVertices[i].y += change*((dist / radius)*(dist / radius) + dist / radius + 1.0f);
+            break;
+          case eTerrainType_Trigo:
+            mVertices[i].y += change*cos(dist / radius);
+            break;
+          default:
+            LogError << "Invalid terrain edit type (" << BrushType << ")" << std::endl;
+            changed = false;
+            break;
+        }
       }
     }
 
@@ -1004,27 +949,15 @@ bool MapChunk::changeTerrain(float x, float z, float change, float radius, int B
   }
   if (changed)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+    gl.bufferData<GL_ARRAY_BUFFER> (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
   }
   return changed;
 }
-
-extern float shaderRed;
-extern float shaderGreen;
-extern float shaderBlue;
 
 bool MapChunk::ChangeMCCV(float x, float z, float change, float radius, bool editMode)
 {
   float dist, xdiff, zdiff;
   bool changed = false;
-
-  xdiff = xbase - x + CHUNKSIZE / 2;
-  zdiff = zbase - z + CHUNKSIZE / 2;
-  dist = sqrt(xdiff*xdiff + zdiff*zdiff);
-
-  if (dist > (radius + MAPCHUNK_RADIUS))
-    return changed;
 
   if (!hasMCCV)
   {
@@ -1044,9 +977,9 @@ bool MapChunk::ChangeMCCV(float x, float z, float change, float radius, bool edi
       float edit = change * (1.0f - dist / radius);
       if (editMode)
       {
-        mccv[i].x += (shaderRed - mccv[i].x)* edit;
-        mccv[i].y += (shaderGreen - mccv[i].y)* edit;
-        mccv[i].z += (shaderBlue - mccv[i].z)* edit;
+        mccv[i].x += (Environment::getInstance()->cursorColorR - mccv[i].x)* edit;
+        mccv[i].y += (Environment::getInstance()->cursorColorG - mccv[i].y)* edit;
+        mccv[i].z += (Environment::getInstance()->cursorColorB - mccv[i].z)* edit;
       }
       else
       {
@@ -1064,213 +997,133 @@ bool MapChunk::ChangeMCCV(float x, float z, float change, float radius, bool edi
   }
   if (changed)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, mccvEntry);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mccv), mccv, GL_STATIC_DRAW);
+    gl.bufferData<GL_ARRAY_BUFFER> (mccvEntry, sizeof(mccv), mccv, GL_STATIC_DRAW);
   }
   return changed;
 }
 
-bool MapChunk::flattenTerrain(float x, float z, float h, float remain, float radius, int BrushType, int flattenType, float angle, float orientation)
+bool MapChunk::flattenTerrain ( float x
+                              , float z
+                              , float remain
+                              , float radius
+                              , int BrushType
+                              , int flattenType
+                              , math::vector_3d const& origin
+                              , math::degrees angle
+                              , math::degrees orientation
+                              )
 {
-  float speed = 1.00f;
-  float dist, xdiff, zdiff, nremain;
-  bool changed = false;
+  bool changed (false);
 
-  xdiff = xbase - x + CHUNKSIZE / 2;
-  zdiff = zbase - z + CHUNKSIZE / 2;
-  dist = sqrt(xdiff*xdiff + zdiff*zdiff);
-
-  if (dist > (radius + MAPCHUNK_RADIUS))
-    return changed;
-
-  vmin.y = 9999999.0f;
-  vmax.y = -9999999.0f;
-
-  for (int i = 0; i < mapbufsize; ++i)
+  for (int i (0); i < mapbufsize; ++i)
   {
-    xdiff = mVertices[i].x - x;
-    zdiff = mVertices[i].z - z;
+    float const dist (misc::dist (mVertices[i].x, mVertices[i].z, x, z));
 
-    dist = sqrt(xdiff*xdiff + zdiff*zdiff);
-
-    if (dist < radius)
+    if (dist >= radius)
     {
-      float o = orientation*M_PI / 180, tanA = tan(angle*M_PI / 180);
-      float ah = h + (xdiff*cos(o) + zdiff*sin(o))*  tanA;
-
-      // 1 = raise only, 2 = lower only
-      if ((flattenType == 1 && ah < mVertices[i].y) || (flattenType == 2 && ah > mVertices[i].y))
-      {
-        continue;
-      }
-
-      if (BrushType == 0)//Flat
-      {
-        mVertices[i].y = remain*mVertices[i].y + (1 - remain)*ah;
-      }
-      else if (BrushType == 1)//Linear
-      {
-        nremain = 1 - (1 - remain) * (1 - dist / radius);
-        mVertices[i].y = nremain*mVertices[i].y + (1 - nremain)*ah;
-      }
-      else if (BrushType == 2)//Smooth
-      {
-        nremain = 1.0f - pow(1.0f - remain, (1.0f + dist / radius));
-        mVertices[i].y = nremain*mVertices[i].y + ((1 - nremain)*ah);
-      }
-
-      changed = true;
+      continue;
     }
 
-    vmin.y = std::min(vmin.y, mVertices[i].y);
-    vmax.y = std::max(vmax.y, mVertices[i].y);
-  }
-  if (changed)
-  {
-    gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
-  }
-  return changed;
-}
+    float const ah ( origin.y
+                   + ( (mVertices[i].x - origin.x) * math::cos (orientation)
+                     + (mVertices[i].z - origin.z) * math::sin (orientation)
+                     ) * math::tan (angle)
+                   );
 
-bool MapChunk::flattenTerrain(float x, float z, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, float angle, float orientation)
-{
-  float speed = 1.00f;
-  float dist, xdiff, zdiff, nremain;
-  bool changed = false;
-
-  xdiff = xbase - x + CHUNKSIZE / 2;
-  zdiff = zbase - z + CHUNKSIZE / 2;
-  dist = sqrt(xdiff*xdiff + zdiff*zdiff);
-
-  if (dist > (radius + MAPCHUNK_RADIUS))
-    return changed;
-
-  vmin.y = 9999999.0f;
-  vmax.y = -9999999.0f;
-
-  for (int i = 0; i < mapbufsize; ++i)
-  {
-    xdiff = mVertices[i].x - x;
-    zdiff = mVertices[i].z - z;
-
-    dist = sqrt(xdiff*xdiff + zdiff*zdiff);
-
-    if (dist < radius)
+    if ( (flattenType == eFlattenMode_Raise && ah < mVertices[i].y)
+       || (flattenType == eFlattenMode_Lower && ah > mVertices[i].y)
+       )
     {
-      float o = orientation*M_PI / 180, tanA = tan(angle*M_PI / 180);
-      float ah = origin.y + ((mVertices[i].x - origin.x)*cos(o) + (mVertices[i].z - origin.z)*sin(o))*  tanA;
-      // 1 = raise only, 2 = lower only
-      if ((flattenType == 1 && ah < mVertices[i].y) || (flattenType == 2 && ah > mVertices[i].y))
-      {
-        continue;
-      }
-
-      if (BrushType == 0)//Flat
-      {
-        mVertices[i].y = remain*mVertices[i].y + (1 - remain)*ah;
-      }
-      else if (BrushType == 1)//Linear
-      {
-        nremain = 1 - (1 - remain) * (1 - dist / radius);
-        mVertices[i].y = nremain*mVertices[i].y + (1 - nremain)*ah;
-      }
-      else if (BrushType == 2)//Smooth
-      {
-        nremain = 1.0f - pow(1.0f - remain, (1.0f + dist / radius));
-        mVertices[i].y = nremain*mVertices[i].y + ((1 - nremain)*ah);
-      }
-
-      changed = true;
+      continue;
     }
 
-    vmin.y = std::min(vmin.y, mVertices[i].y);
-    vmax.y = std::max(vmax.y, mVertices[i].y);
+    mVertices[i].y = math::interpolation::linear
+      ( BrushType == eFlattenType_Flat ? remain
+      : BrushType == eFlattenType_Linear ? remain * (1.f - dist / radius)
+      : BrushType == eFlattenType_Smooth ? pow (remain, 1.f + dist / radius)
+      : throw std::logic_error ("bad brush type")
+      , mVertices[i].y
+      , ah
+      );
+
+    changed = true;
   }
+
   if (changed)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+    vmin.y = std::numeric_limits<float>::max();
+    vmax.y = std::numeric_limits<float>::lowest();
+
+    for (int i (0); i < mapbufsize; ++i)
+    {
+      vmin.y = std::min (vmin.y, mVertices[i].y);
+      vmax.y = std::max (vmax.y, mVertices[i].y);
+    }
+
+    gl.bufferData<GL_ARRAY_BUFFER> (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
   }
+
   return changed;
 }
 
 bool MapChunk::blurTerrain(float x, float z, float remain, float radius, int BrushType)
 {
-  float dist, dist2, xdiff, zdiff, nremain;
-  bool changed = false;
-  xdiff = xbase - x + CHUNKSIZE / 2;
-  zdiff = zbase - z + CHUNKSIZE / 2;
-  dist = std::sqrt(xdiff*xdiff + zdiff*zdiff);
+  bool changed (false);
 
-  if (dist > (radius + MAPCHUNK_RADIUS))
-    return false;
-
-  vmin.y = 9999999.0f;
-  vmax.y = -9999999.0f;
-
-  for (int i = 0; i < mapbufsize; ++i)
+  for (int i (0); i < mapbufsize; ++i)
   {
-    xdiff = mVertices[i].x - x;
-    zdiff = mVertices[i].z - z;
+    float const dist (misc::dist (mVertices[i].x, mVertices[i].z, x, z));
 
-    dist = std::sqrt(xdiff*xdiff + zdiff*zdiff);
-
-    if (dist < radius)
+    if (dist >= radius)
     {
-      float TotalHeight;
-      float TotalWeight;
-      float tx, tz, h;
-      math::vector_3d TempVec;
-      int Rad = (int)(radius / UNITSIZE);
-
-      TotalHeight = 0;
-      TotalWeight = 0;
-      for (int j = -Rad * 2; j <= Rad * 2; ++j)
-      {
-        tz = z + j * UNITSIZE / 2;
-        for (int k = -Rad; k <= Rad; ++k)
-        {
-          tx = x + k*UNITSIZE + (j % 2) * UNITSIZE / 2.0f;
-          xdiff = tx - mVertices[i].x;
-          zdiff = tz - mVertices[i].z;
-          dist2 = std::sqrt(xdiff*xdiff + zdiff*zdiff);
-          if (dist2 > radius)
-            continue;
-          gWorld->GetVertex(tx, tz, &TempVec);
-          TotalHeight += (1.0f - dist2 / radius) * TempVec.y;
-          TotalWeight += (1.0f - dist2 / radius);
-        }
-      }
-
-      h = TotalHeight / TotalWeight;
-
-      if (BrushType == 0)//Flat
-      {
-        mVertices[i].y = remain * mVertices[i].y + (1 - remain) * h;
-      }
-      else if (BrushType == 1)//Linear
-      {
-        nremain = 1 - (1 - remain) * (1 - dist / radius);
-        mVertices[i].y = nremain * mVertices[i].y + (1 - nremain) * h;
-      }
-      else if (BrushType == 2)//Smooth
-      {
-        nremain = 1.0f - pow(1.0f - remain, (1.0f + dist / radius));
-        mVertices[i].y = nremain*mVertices[i].y + (1 - nremain)*h;
-      }
-
-      changed = true;
+      continue;
     }
 
-    vmin.y = std::min(vmin.y, mVertices[i].y);
-    vmax.y = std::max(vmax.y, mVertices[i].y);
+    int Rad = (int)(radius / UNITSIZE);
+    float TotalHeight = 0;
+    float TotalWeight = 0;
+    for (int j = -Rad * 2; j <= Rad * 2; ++j)
+    {
+      float tz = z + j * UNITSIZE / 2;
+      for (int k = -Rad; k <= Rad; ++k)
+      {
+        float tx = x + k*UNITSIZE + (j % 2) * UNITSIZE / 2.0f;
+        float dist2 = misc::dist (tx, tz, mVertices[i].x, mVertices[i].z);
+        if (dist2 > radius)
+          continue;
+        math::vector_3d TempVec;
+        gWorld->GetVertex(tx, tz, &TempVec);
+        TotalHeight += (1.0f - dist2 / radius) * TempVec.y;
+        TotalWeight += (1.0f - dist2 / radius);
+      }
+    }
+
+    mVertices[i].y = math::interpolation::linear
+      ( BrushType == eFlattenType_Flat ? remain
+      : BrushType == eFlattenType_Linear ? remain * (1.f - dist / radius)
+      : BrushType == eFlattenType_Smooth ? pow (remain, 1.f + dist / radius)
+      : throw std::logic_error ("bad brush type")
+      , mVertices[i].y
+      , TotalHeight / TotalWeight
+      );
+
+    changed = true;
   }
+
   if (changed)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+    vmin.y = std::numeric_limits<float>::max();
+    vmax.y = std::numeric_limits<float>::lowest();
+
+    for (int i (0); i < mapbufsize; ++i)
+    {
+      vmin.y = std::min (vmin.y, mVertices[i].y);
+      vmax.y = std::max (vmax.y, mVertices[i].y);
+    }
+
+    gl.bufferData<GL_ARRAY_BUFFER> (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
   }
+
   return changed;
 }
 
@@ -1305,49 +1158,18 @@ bool MapChunk::isHole(int i, int j)
   return (holes & ((1 << ((j * 4) + i)))) != 0;
 }
 
-void MapChunk::addHole(int i, int j)
+void MapChunk::setHole(float x, float z, bool big, bool add)
 {
-  holes = holes | ((1 << ((j * 4) + i)));
-  initStrip();
-}
-
-void MapChunk::addHoleBig(int i, int j)
-{
-  for (int x = -3; x < 4; ++x)
+  if (big)
   {
-    for (int y = -3; y < 4; ++y)
-    {
-      addHole(i + x, j + y);
-    }
+    holes = add ? 0xFFFFFFFF : 0x0;
   }
-}
-
-void MapChunk::addHoleEverywhere()
-{
-  holes = 0x7FFFFFFF;
-  initStrip();
-}
-
-void MapChunk::removeHole(int i, int j)
-{
-  holes = holes & ~((1 << ((j * 4) + i)));
-  initStrip();
-}
-
-void MapChunk::removeHoleBig(int i, int j)
-{
-  for (int x = -3; x<4; x++)
+  else
   {
-    for (int y = -3; y<4; y++)
-    {
-      removeHole(i + x, j + y);
-    }
+    int v = 1 << ((int)((z - zbase) / MINICHUNKSIZE) * 4 + (int)((x - xbase) / MINICHUNKSIZE));
+    holes = add ? (holes & ~v) : (holes | v);
   }
-}
 
-void MapChunk::removeAllHoles()
-{
-  holes = 0x0;
   initStrip();
 }
 
@@ -1718,8 +1540,7 @@ bool MapChunk::fixGapLeft(const MapChunk* chunk)
 
   if (changed)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+    gl.bufferData<GL_ARRAY_BUFFER> (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
   }
   return changed;
 }
@@ -1743,8 +1564,7 @@ bool MapChunk::fixGapAbove(const MapChunk* chunk)
 
   if (changed)
   {
-    gl.bindBuffer(GL_ARRAY_BUFFER, vertices);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
+    gl.bufferData<GL_ARRAY_BUFFER> (vertices, sizeof(mVertices), mVertices, GL_STATIC_DRAW);
   }
   return changed;
 }
@@ -1765,8 +1585,7 @@ gl.disable( GL_LIGHTING );
 //gl.disable(GL_FOG);
 
 // low detail version
-gl.bindBuffer( GL_ARRAY_BUFFER, vertices );
-gl.vertexPointer( 3, GL_FLOAT, 0, 0 );
+gl.vertexPointer (vertices, 3, GL_FLOAT, 0, 0 );
 gl.disableClientState( GL_NORMAL_ARRAY );
 gl.drawElements( GL_TRIANGLE_STRIP, stripsize, GL_UNSIGNED_SHORT, gWorld->mapstrip );
 gl.enableClientState( GL_NORMAL_ARRAY );
@@ -1832,7 +1651,15 @@ _textures[i] = TextureManager::get(mt->mTextureFilenames[tex[i]]);
 
 
 
-/*void HeightColor(float height, math::vector_3d *Color)
+/*
+static const int HEIGHT_TOP = 1000;
+static const int HEIGHT_MID = 600;
+static const int HEIGHT_LOW = 300;
+static const int HEIGHT_ZERO = 0;
+static const int HEIGHT_SHALLOW = -100;
+static const int HEIGHT_DEEP = -250;
+
+void HeightColor(float height, math::vector_3d *Color)
 {
 White  1.00  1.00  1.00
 Brown  0.75  0.50  0.00

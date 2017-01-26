@@ -2,69 +2,67 @@
 
 #pragma once
 
-#include "AppState.h"
-#include "Selection.h"
+#include <noggit/AppState.h>
+#include <noggit/Selection.h>
 
 class UIFrame;
 class World;
 
 enum eViewMode
 {
-	eViewMode_Minimap,
-	eViewMode_2D,
-	eViewMode_3D
+  eViewMode_Minimap,
+  eViewMode_2D,
+  eViewMode_3D
 };
 
-enum eFlattenMode
-{
-  eFlattenMode_Both,
-  eFlattenMode_Raise,
-  eFlattenMode_Lower,
-  eFlattenMode_Count
-};
-
-class MapView : public AppState, public HotKeyReceiver
+class MapView : public AppState
 {
 private:
-	float ah, av, moving, strafing, updown, mousedir, movespd, turn, lookat;
-	bool key_w;
-	bool look;
-	bool _GUIDisplayingEnabled;
+  bool _mod_alt_down = false;
+  bool _mod_ctrl_down = false;
+  bool _mod_shift_down = false;
+  bool _mod_space_down = false;
 
-	void save();
+  float ah, av, moving, strafing, updown, mousedir, movespd, turn, lookat;
+  bool key_w;
+  bool look;
+  bool _GUIDisplayingEnabled;
 
-	float lastBrushUpdate;
+  void save();
 
-	void doSelection(bool selectTerrainOnly);
+  float lastBrushUpdate;
 
-	int mViewMode;
+  void doSelection(bool selectTerrainOnly);
 
-	void displayViewMode_2D(float t, float dt);
-	void displayViewMode_3D(float t, float dt);
+  int mViewMode;
 
-	void displayGUIIfEnabled();
+  void displayViewMode_2D(float t, float dt);
+  void displayViewMode_3D(float t, float dt);
 
-	void createGUI();
+  void displayGUIIfEnabled();
 
-	float mTimespeed;
+  void createGUI();
 
-	void checkWaterSave();
+  float mTimespeed;
+
+  void checkWaterSave();
 
 public:
-	MapView(float ah0 = -90.0f, float av0 = -30.0f);
-	~MapView();
+  MapView(float ah0 = -90.0f, float av0 = -30.0f);
+  ~MapView();
 
-	void tick(float t, float dt);
-	void display(float t, float dt);
+  void tick(float t, float dt);
+  void display(float t, float dt);
 
-	void keypressed(SDL_KeyboardEvent *e);
-	void mousemove(SDL_MouseMotionEvent *e);
-	void mouseclick(SDL_MouseButtonEvent *e);
-	void resizewindow();
+  void mousemove(SDL_MouseMotionEvent *e);
+  virtual void keyReleaseEvent (SDL_KeyboardEvent*) override;
+  virtual void keyPressEvent (SDL_KeyboardEvent*) override;
+  virtual void mouseReleaseEvent (SDL_MouseButtonEvent*) override;
+  virtual void mousePressEvent (SDL_MouseButtonEvent*) override;
+  void resizewindow();
 
-	void quit();
-	void quitask();
-	void inserObjectFromExtern(int model);
-	void addModelFromTextSelection(int id);
+  void quit();
+  void quitask();
+  void inserObjectFromExtern(int model);
   void selectModel(selection_type entry);
 };

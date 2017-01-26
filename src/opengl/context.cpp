@@ -1,15 +1,15 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
 
-#include <opengl/context.hpp>
-
 #include <noggit/Log.h>
+#include <opengl/context.hpp>
+#include <opengl/scoped.hpp>
 
 #include <boost/current_function.hpp>
 
 #include <functional>
 #include <memory>
-#include <vector>
 #include <string>
+#include <vector>
 
 opengl::context gl;
 
@@ -837,27 +837,6 @@ namespace opengl
     return glUniformMatrix4fv (location, count, transpose, value);
   }
 
-  void context::initNames()
-  {
-    verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
-    return glInitNames();
-  }
-  void context::pushName (GLuint name)
-  {
-    verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
-    return glPushName (name);
-  }
-  void context::popName()
-  {
-    verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
-    return glPopName();
-  }
-  void context::selectBuffer (GLsizei size, GLuint* buffer)
-  {
-    verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
-    return glSelectBuffer (size, buffer);
-  }
-
   void context::clearStencil (GLint s)
   {
     verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
@@ -931,5 +910,40 @@ namespace opengl
   {
     verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
     return glFramebufferRenderbuffer (target, attachment, renderbuffertarget, renderbuffer);
+  }
+
+  template<GLenum target>
+    void context::bufferData (GLuint buffer, GLsizeiptr size, GLvoid const* data, GLenum usage)
+  {
+    scoped::buffer_binder<target> const _ (buffer);
+    return bufferData (target, size, data, usage);
+  }
+  template void context::bufferData<GL_ARRAY_BUFFER> (GLuint buffer, GLsizeiptr size, GLvoid const* data, GLenum usage);
+
+  void context::vertexPointer (GLuint buffer, GLint size, GLenum type, GLsizei stride, GLvoid const* pointer)
+  {
+    scoped::buffer_binder<GL_ARRAY_BUFFER> const _ (buffer);
+    return vertexPointer (size, type, stride, pointer);
+  }
+  void context::colorPointer (GLuint buffer, GLint size, GLenum type, GLsizei stride, GLvoid const* pointer)
+  {
+    scoped::buffer_binder<GL_ARRAY_BUFFER> const _ (buffer);
+    return colorPointer (size, type, stride, pointer);
+  }
+  void context::texCoordPointer (GLuint buffer, GLint size, GLenum type, GLsizei stride, GLvoid const* pointer)
+  {
+    scoped::buffer_binder<GL_ARRAY_BUFFER> const _ (buffer);
+    return texCoordPointer (size, type, stride, pointer);
+  }
+  void context::normalPointer (GLuint buffer, GLenum type, GLsizei stride, GLvoid const* pointer)
+  {
+    scoped::buffer_binder<GL_ARRAY_BUFFER> const _ (buffer);
+    return normalPointer (type, stride, pointer);
+  }
+
+  void context::drawElements (GLenum mode, GLuint index_buffer, GLsizei count, GLenum type, GLvoid const* indices)
+  {
+    scoped::buffer_binder<GL_ELEMENT_ARRAY_BUFFER> const _ (index_buffer);
+    return drawElements (mode, count, type, indices);
   }
 }

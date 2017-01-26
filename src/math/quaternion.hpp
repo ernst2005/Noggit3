@@ -2,17 +2,17 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include <math/interpolation.hpp>
 #include <math/vector_4d.hpp>
 
+#include <cstdint>
+
 namespace math
 {
-  class vector_3d;
+  struct vector_3d;
 
   //! \note Actually, a typedef would be enough.
-  class quaternion : public vector_4d
+  struct quaternion : public vector_4d
   {
   public:
    quaternion ( const float& x = 0.0f

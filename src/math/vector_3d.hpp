@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ostream>
+#include <tuple>
 
 namespace math
 {
-  class vector_3d;
+  struct vector_3d;
 
   template<typename T>
     struct vector_3d_base
@@ -145,6 +147,16 @@ namespace math
           && a.y < y && b.y > y
           && a.z < z && b.z > z;
     }
+
+    bool operator== (vector_3d_base<T> const& rhs) const
+    {
+      return std::tie (x, y, z) == std::tie (rhs.x, rhs.y, rhs.z);
+    }
+    friend std::ostream& operator<< (std::ostream& os, vector_3d_base<T> const& x)
+    {
+      return os << x.x << ", " << x.y << ", " << x.z;
+    }
+
   };
 
   template<typename T>
@@ -164,7 +176,7 @@ namespace math
            };
   }
 
-  class vector_3d : public vector_3d_base<float>
+  struct vector_3d : public vector_3d_base<float>
   {
   public:
     using vector_3d_base<float>::vector_3d_base;

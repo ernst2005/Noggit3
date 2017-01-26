@@ -1,44 +1,45 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
 
-#define _CRT_SECURE_NO_WARNINGS
-#include "World.h"
-#include <algorithm>
-#include <cassert>
-#include <iostream>
-#include <fstream>
-#include <map>
-#include <sstream>
-#include <string>
-#include <utility>
-#include <time.h>
+#include <noggit/Brush.h> // brush
+#include <noggit/ConfigFile.h>
+#include <noggit/DBC.h>
+#include <noggit/Environment.h>
+#include <noggit/Frustum.h>
+#include <noggit/Log.h>
+#include <noggit/MapChunk.h>
+#include <noggit/MapTile.h>
+#include <noggit/MapTile.h>
+#include <noggit/Misc.h>
+#include <noggit/ModelManager.h> // ModelManager
+#include <noggit/Project.h>
+#include <noggit/Settings.h>
+#include <noggit/TextureManager.h>
+#include <noggit/TileWater.hpp>// tile water
+#include <noggit/Video.h>
+#include <noggit/WMOInstance.h> // WMOInstance
+#include <noggit/World.h>
+#include <noggit/map_index.hpp>
+#include <noggit/texture_set.hpp>
+#include <noggit/ui/TexturingGUI.h>
+#include <opengl/matrix.hpp>
+#include <opengl/scoped.hpp>
+#include <opengl/shader.hpp>
+
 #include <boost/filesystem.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/thread/thread.hpp>
 
-#include "DBC.h"
-#include "Environment.h"
-#include "Frustum.h"
-#include "Log.h"
-#include "MapChunk.h"
-#include "texture_set.hpp"
-#include "MapTile.h"
-#include "Misc.h"
-#include "ModelManager.h" // ModelManager
-#include "Project.h"
-#include "Settings.h"
-#include "TextureManager.h"
-#include "UITexturingGUI.h"
-#include "Video.h"
-#include "WMOInstance.h" // WMOInstance
-#include "MapTile.h"
-#include "Brush.h" // brush
-#include "ConfigFile.h"
-#include "map_index.hpp"
-#include "TileWater.hpp"// tile water
-#include <opengl/matrix.hpp>
-#include <opengl/scoped.hpp>
-
+#include <algorithm>
+#include <cassert>
+#include <ctime>
+#include <forward_list>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <sstream>
+#include <string>
 #include <unordered_set>
+#include <utility>
 
 World *gWorld = nullptr;
 
@@ -60,10 +61,10 @@ namespace
   void render_square(math::vector_3d const& pos, float size, float orientation)
   {
     float dx1 = size*cos(orientation) - size*sin(orientation);
-    float dx2 = size*cos(orientation + M_PI / 2) - size*sin(orientation + M_PI / 2);
+    float dx2 = size*cos(orientation + math::constants::pi / 2) - size*sin(orientation + math::constants::pi / 2);
     float dz1 = size*sin(orientation) + size*cos(orientation);
-    float dz2 = size*sin(orientation + M_PI / 2) + size*cos(orientation + M_PI / 2);
-    
+    float dz2 = size*sin(orientation + math::constants::pi / 2) + size*cos(orientation + math::constants::pi / 2);
+
     opengl::scoped::bool_setter<GL_DEPTH_TEST, GL_FALSE> depth_test;
 
     gl.begin(GL_QUADS);
@@ -79,7 +80,7 @@ namespace
   std::size_t const sphere_segments (15);
   void draw_sphere_point (int i, int j, float radius)
   {
-    static math::radians const drho (M_PI / sphere_segments);
+    static math::radians const drho (math::constants::pi / sphere_segments);
     static math::radians const dtheta (2.0f * drho._);
 
     math::radians const rho (i * drho._);
@@ -138,7 +139,7 @@ namespace
   void draw_disk (float radius)
   {
     int const slices (std::max (15.0f, radius * 1.5f));
-    static math::radians const max (2.0f * M_PI);
+    static math::radians const max (2.0f * math::constants::pi);
     float const stride (max._ / slices);
 
     gl.begin (GL_LINE_LOOP);
@@ -262,19 +263,19 @@ World::World(const std::string& name)
   , drawdoodads(true)
   , drawfog(false)
   , drawlines(false)
-  , renderAnimations(false)
   , drawmodels(true)
   , drawterrain(true)
   , drawwater(true)
   , drawwmo(true)
   , drawwireframe(false)
+  , draw_mfbo (false)
   , lighting(true)
+  , renderAnimations(false)
   , animtime(0)
   , time(1450)
   , basename(name)
   , fogdistance(777.0f)
   , culldistance(fogdistance)
-  , autoheight(false)
   , minX(0.0f)
   , maxX(0.0f)
   , minY(0.0f)
@@ -282,6 +283,7 @@ World::World(const std::string& name)
   , zoom(0.25f)
   , skies(nullptr)
   , loading(false)
+  , autoheight(false)
   , outdoorLightStats(OutdoorLightStats())
   , minimap(0)
   , mapstrip(nullptr)
@@ -599,8 +601,7 @@ void World::initGlobalVBOs(GLuint* pDetailTexCoords, GLuint* pAlphaTexCoords)
     }
 
     gl.genBuffers(1, pDetailTexCoords);
-    gl.bindBuffer(GL_ARRAY_BUFFER, *pDetailTexCoords);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(temp), temp, GL_STATIC_DRAW);
+    gl.bufferData<GL_ARRAY_BUFFER> (*pDetailTexCoords, sizeof(temp), temp, GL_STATIC_DRAW);
 
     // init texture coordinates for alpha map:
     vt = temp;
@@ -619,10 +620,7 @@ void World::initGlobalVBOs(GLuint* pDetailTexCoords, GLuint* pAlphaTexCoords)
     }
 
     gl.genBuffers(1, pAlphaTexCoords);
-    gl.bindBuffer(GL_ARRAY_BUFFER, *pAlphaTexCoords);
-    gl.bufferData(GL_ARRAY_BUFFER, sizeof(temp), temp, GL_STATIC_DRAW);
-
-    gl.bindBuffer(GL_ARRAY_BUFFER, 0);
+    gl.bufferData<GL_ARRAY_BUFFER> (*pAlphaTexCoords, sizeof(temp), temp, GL_STATIC_DRAW);
   }
 }
 
@@ -787,17 +785,10 @@ void World::setupFog()
   }
 }
 
-extern float groundBrushRadius;
-extern float blurBrushRadius;
-extern float shaderRadius;
 extern int terrainMode;
-extern Brush textureBrush;
 
-
-void World::draw()
+void World::draw(float brushRadius, float hardness)
 {
-  gl.bindBuffer(GL_ARRAY_BUFFER, 0);
-
   opengl::matrix::look_at (camera, lookat, {0.0f, 1.0f, 0.0f});
 
   Frustum const frustum;
@@ -891,13 +882,11 @@ void World::draw()
 
   gl.clientActiveTexture(GL_TEXTURE0);
   gl.enableClientState(GL_TEXTURE_COORD_ARRAY);
-  gl.bindBuffer(GL_ARRAY_BUFFER, detailtexcoords);
-  gl.texCoordPointer(2, GL_FLOAT, 0, 0);
+  gl.texCoordPointer (detailtexcoords, 2, GL_FLOAT, 0, 0);
 
   gl.clientActiveTexture(GL_TEXTURE1);
   gl.enableClientState(GL_TEXTURE_COORD_ARRAY);
-  gl.bindBuffer(GL_ARRAY_BUFFER, alphatexcoords);
-  gl.texCoordPointer(2, GL_FLOAT, 0, 0);
+  gl.texCoordPointer (alphatexcoords, 2, GL_FLOAT, 0, 0);
 
   gl.clientActiveTexture(GL_TEXTURE0);
 
@@ -913,31 +902,10 @@ void World::draw()
     }
   }
 
-  GLint viewport[4];
-  gl.getIntegerv(GL_VIEWPORT, viewport);
-
-  float win_x (Environment::getInstance()->screenX);
-  float win_y (viewport[3] - Environment::getInstance()->screenY);
-  float win_z;
-  gl.readPixels (win_x, win_y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &win_z);
-
-  math::vector_4d const normalized_device_coords
-    ( 2.0f * (win_x - static_cast<float> (viewport[0])) / static_cast<float> (viewport[2]) - 1.0f
-    , 2.0f * (win_y - static_cast<float> (viewport[1])) / static_cast<float> (viewport[3]) - 1.0f
-    , 2.0f * win_z - 1.0f
-    , 1.0f
-    );
-
-  math::vector_3d const pos ( ( ( opengl::matrix::model_view()
-                                * opengl::matrix::projection()
-                                ).inverted().transposed()
-                              * normalized_device_coords
-                              ).xyz_normalized_by_w()
+  math::vector_3d const pos ( Environment::getInstance()->Pos3DX
+                            , Environment::getInstance()->Pos3DY
+                            , Environment::getInstance()->Pos3DZ
                             );
-
-  Environment::getInstance()->Pos3DX = pos.x;
-  Environment::getInstance()->Pos3DY = pos.y;
-  Environment::getInstance()->Pos3DZ = pos.z;
 
   // Selection circle
   if (this->IsSelection(eEntry_MapChunk))
@@ -949,56 +917,39 @@ void World::draw()
     //gl.depthMask(false);
     //gl.disable(GL_DEPTH_TEST);
 
-    if (terrainMode == 0)
+    if (terrainMode == 0 && Environment::getInstance()->groundBrushType == 5)
     {
-      // quadratic
-      if (Environment::getInstance()->groundBrushType == 5)
+      render_square(pos, brushRadius / 2.0f, 0.0f);
+    }
+    else
+    {
+      if (Environment::getInstance()->cursorType == 1)
       {
-        render_square (pos, groundBrushRadius / 2.0f, 0.0f);
-      }
-      else if (Environment::getInstance()->cursorType == 1)
-      {
-        render_disk (pos, groundBrushRadius);
+        render_disk(pos, brushRadius);
+        if (hardness >= 0.01f)
+        {
+          render_disk(pos, brushRadius * hardness);
+        }
       }
       else if (Environment::getInstance()->cursorType == 2)
       {
-        render_sphere (pos, groundBrushRadius);
+        render_sphere(pos, brushRadius);
       }
     }
-    else if (terrainMode == 1)
-    {
 
-      if (Environment::getInstance()->cursorType == 1)
-        render_disk (pos, blurBrushRadius);
-      else if (Environment::getInstance()->cursorType == 2)
-        render_sphere (pos, blurBrushRadius);
+    if (terrainMode == 1 && Environment::getInstance()->flattenAngleEnabled)
+    {
+      math::degrees o = math::degrees(Environment::getInstance()->flattenOrientation);
+      float x = brushRadius * cos(o);
+      float z = brushRadius * sin(o);
+      float h = brushRadius * tan(math::degrees(Environment::getInstance()->flattenAngle));
+      math::vector_3d const dest1 = pos + math::vector_3d(x, 0.0f, z);
+      math::vector_3d const dest2 = pos + math::vector_3d(x, h, z);
+      render_line(pos, dest1);
+      render_line(pos, dest2);
+      render_line(dest1, dest2);
+    }
 
-      if (Environment::getInstance()->flattenAngleEnabled)
-      {
-        float const o = Environment::getInstance()->flattenOrientation;
-        render_line(pos, pos + math::vector_3d (blurBrushRadius * cos (o), 0.0f, blurBrushRadius * sin(o)));
-      }
-    }
-    else if (terrainMode == 2)
-    {
-      if (Environment::getInstance()->cursorType == 1)
-      {
-        render_disk (pos, textureBrush.getRadius());
-        render_disk (pos, textureBrush.getRadius() * textureBrush.getHardness());
-      }
-      else if (Environment::getInstance()->cursorType == 2)
-      {
-        render_sphere (pos, textureBrush.getRadius());
-      }
-    }
-    else if (terrainMode == 8)
-    {
-      if (Environment::getInstance()->cursorType == 1)
-        render_disk (pos, shaderRadius);
-      else if (Environment::getInstance()->cursorType == 2)
-        render_sphere (pos, shaderRadius);
-    }
-    else render_sphere (pos, 0.3f);
 
     gl.enable(GL_CULL_FACE);
     gl.enable(GL_DEPTH_TEST);
@@ -1025,6 +976,49 @@ void World::draw()
     }
   }
 
+  if (draw_mfbo)
+  {
+    //! \todo don't compile on every frame
+    opengl::program const program
+      { { GL_VERTEX_SHADER
+        , R"code(
+#version 110
+
+attribute vec4 position;
+
+uniform mat4 model_view;
+uniform mat4 projection;
+
+void main()
+{
+  gl_Position = projection * model_view * position;
+}
+)code"
+        }
+      , { GL_FRAGMENT_SHADER
+        , R"code(
+#version 110
+
+uniform vec4 color;
+
+void main()
+{
+  gl_FragColor = color;
+}
+)code"
+        }
+      };
+    opengl::scoped::use_program mfbo_shader {program};
+
+    mfbo_shader.uniform ("model_view", opengl::matrix::model_view());
+    mfbo_shader.uniform ("projection", opengl::matrix::projection());
+
+    for (MapTile* tile : mapIndex->loaded_tiles())
+    {
+      tile->drawMFBO (mfbo_shader);
+    }
+  }
+
   opengl::texture::set_active_texture (1);
   opengl::texture::disable_texture();
   opengl::texture::set_active_texture (0);
@@ -1035,12 +1029,6 @@ void World::draw()
 
   gl.materialfv(GL_FRONT_AND_BACK, GL_SPECULAR, math::vector_4d (0.0f, 0.0f, 0.0f, 1.0f));
   gl.materiali(GL_FRONT_AND_BACK, GL_SHININESS, 0);
-
-  // unbind hardware buffers
-  gl.bindBuffer(GL_ARRAY_BUFFER, 0);
-
-
-
 
   gl.enable(GL_CULL_FACE);
 
@@ -1115,10 +1103,6 @@ void World::draw()
   ex = (int)(camera.x / TILESIZE);
   ez = (int)(camera.z / TILESIZE);
 }
-
-static const GLuint MapObjName = 1;
-static const GLuint DoodadName = 2;
-static const GLuint MapTileName = 3;
 
 selection_result World::intersect (math::ray const& ray, bool pOnlyMap)
 {
@@ -1200,71 +1184,16 @@ unsigned int World::getAreaID()
   return !curChunk ? (unsigned int)(curChunk->getAreaID()) : 0;
 }
 
-void World::clearHeight(int id, const tile_index& tile)
+void World::clearHeight(float x, float z)
 {
-  // set the Area ID on a tile x,z on all chunks
-  for (int j = 0; j<16; ++j)
-  {
-    for (int i = 0; i<16; ++i)
-    {
-      clearHeight(id, tile, j, i);
-    }
-  }
-
-  MapTile *curTile;
-  curTile = mapIndex->getTile(tile);
-
-  if (curTile)
-  {
-    mapIndex->setChanged(tile);
-  }
-  for (int j = 0; j<16; ++j)
-  {
-    for (int i = 0; i<16; ++i)
-    {
-      // set the Area ID on a tile x,z on the chunk cx,cz
-      MapChunk *curChunk = curTile->getChunk((unsigned int)j, (unsigned int)i);
-      curChunk->recalcNorms();
-    }
-  }
-
+  for_all_chunks_on_tile(x, z, [](MapChunk* chunk) {
+    chunk->clearHeight();
+  });
+  for_all_chunks_on_tile(x, z, [](MapChunk* chunk) {
+    chunk->recalcNorms();
+  });
 }
 
-void World::clearHeight(int /*id*/, const tile_index& tile, int _cx, int _cz)
-{
-  // set the Area ID on a tile x,z on the chunk cx,cz
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (!curTile)
-  {
-    return;
-  }
-
-  mapIndex->setChanged(tile);
-  MapChunk *curChunk = curTile->getChunk((unsigned int)_cx, (unsigned int)_cz);
-
-  if (curChunk == nullptr)
-  {
-    return;
-  }
-
-
-  curChunk->vmin.y = 9999999.0f;
-  curChunk->vmax.y = -9999999.0f;
-
-  for (int i = 0; i < mapbufsize; ++i)
-  {
-    curChunk->mVertices[i].y = 0.0f;
-
-    curChunk->vmin.y = std::min(curChunk->vmin.y, curChunk->mVertices[i].y);
-    curChunk->vmax.y = std::max(curChunk->vmax.y, curChunk->mVertices[i].y);
-  }
-
-  glBindBuffer(GL_ARRAY_BUFFER, curChunk->vertices);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(curChunk->mVertices), curChunk->mVertices, GL_STATIC_DRAW);
-
-  curChunk->recalcNorms();
-}
 
 void World::clearAllModelsOnADT(const tile_index& tile)
 {
@@ -1348,32 +1277,15 @@ void World::addWaterLayer(const tile_index& tile, float height, unsigned char tr
   }
 }
 
-void World::setAreaID(int id, const tile_index& tile)
+void World::setAreaID(float x, float z, int id, bool adt)
 {
-  // set the Area ID on a tile x,z on all chunks
-  for (int j = 0; j<16; ++j)
+  if (adt) 
   {
-    for (int i = 0; i<16; ++i)
-    {
-      setAreaID(id, tile, j, i);
-    }
+    for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) { chunk->setAreaID(id);});
   }
-}
-
-void World::setAreaID(int id, const tile_index& tile, int _cx, int _cz)
-{
-  // set the Area ID on a tile x,z on the chunk cx,cz
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (curTile)
+  else
   {
-    mapIndex->setChanged(tile);
-    MapChunk *curChunk = curTile->getChunk((unsigned int)_cx, (unsigned int)_cz);
-
-    if (curChunk)
-    {
-      curChunk->setAreaID(id);
-    }
+    for_chunk_at(x, z, [&](MapChunk* chunk) { chunk->setAreaID(id);});
   }
 }
 
@@ -1460,147 +1372,118 @@ bool World::GetVertex(float x, float z, math::vector_3d *V)
   return mapIndex->getTile(tile)->GetVertex(x, z, V);
 }
 
-void World::changeShader(float x, float z, float change, float radius, bool editMode)
+template<typename Fun>
+  bool World::for_all_chunks_in_range (float x, float z, float radius, Fun&& fun)
 {
-  for (MapTile* tile : mapIndex->tiles_in_range(x, z, radius))
+  bool changed (false);
+
+  for (MapTile* tile : mapIndex->tiles_in_range (x, z, radius))
   {
-    for (size_t ty = 0; ty < 16; ++ty)
+    for (MapChunk* chunk : tile->chunks_in_range (x, z, radius))
     {
-      for (size_t tx = 0; tx < 16; ++tx)
+      if (fun (chunk))
       {
-        if (tile->getChunk(ty, tx)->ChangeMCCV(x, z, change, radius, editMode))
-        {
-          mapIndex->setChanged(tile);
-        }
+        changed = true;
+        mapIndex->setChanged (tile);
       }
     }
   }
+
+  return changed;
+}
+template<typename Fun, typename Post>
+  bool World::for_all_chunks_in_range (float x, float z, float radius, Fun&& fun, Post&& post)
+{
+  std::forward_list<MapChunk*> modified_chunks;
+
+  bool changed ( for_all_chunks_in_range
+                   ( x, z, radius
+                   , [&] (MapChunk* chunk)
+                     {
+                       if (fun (chunk))
+                       {
+                         modified_chunks.emplace_front (chunk);
+                         return true;
+                       }
+                       return false;
+                     }
+                   )
+               );
+
+  for (MapChunk* chunk : modified_chunks)
+  {
+    post (chunk);
+  }
+
+  return changed;
+}
+
+
+void World::changeShader(float x, float z, float change, float radius, bool editMode)
+{
+  for_all_chunks_in_range
+    ( x, z, radius
+    , [&] (MapChunk* chunk)
+      {
+        return chunk->ChangeMCCV(x, z, change, radius, editMode);
+      }
+    );
 }
 
 void World::changeTerrain(float x, float z, float change, float radius, int BrushType)
 {
-  std::vector<MapChunk*> chunks;
-
-  for (MapTile* tile : mapIndex->tiles_in_range(x, z, radius))
-  {
-    for (size_t ty = 0; ty < 16; ++ty)
-    {
-      for (size_t tx = 0; tx < 16; ++tx)
+  for_all_chunks_in_range
+    ( x, z, radius
+    , [&] (MapChunk* chunk)
       {
-        MapChunk* chunk = tile->getChunk(ty, tx);
-        if (chunk->changeTerrain(x, z, change, radius, BrushType))
-        {
-          chunks.emplace_back(chunk);
-          mapIndex->setChanged(tile);
-        }
+        return chunk->changeTerrain(x, z, change, radius, BrushType);
       }
-    }
-  }
-
-  for (MapChunk* chunk : chunks)
-  {
-    chunk->recalcNorms();
-  }
+    , [] (MapChunk* chunk)
+      {
+        chunk->recalcNorms();
+      }
+    );
 }
 
-void World::flattenTerrain(float x, float z, float h, float remain, float radius, int BrushType, int flattenType, float angle, float orientation)
+void World::flattenTerrain(float x, float z, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, math::degrees angle, math::degrees orientation)
 {
-  std::vector<MapChunk*> chunks;
-
-  for (MapTile* tile : mapIndex->tiles_in_range(x, z, radius))
-  {
-    for (size_t ty = 0; ty < 16; ++ty)
-    {
-      for (size_t tx = 0; tx < 16; ++tx)
+  for_all_chunks_in_range
+    ( x, z, radius
+    , [&] (MapChunk* chunk)
       {
-        MapChunk* chunk = tile->getChunk(ty, tx);
-        if (chunk->flattenTerrain(x, z, h, remain, radius, BrushType, flattenType, angle, orientation))
-        {
-          chunks.emplace_back(chunk);
-          mapIndex->setChanged(tile);
-        }
+        return chunk->flattenTerrain(x, z, remain, radius, BrushType, flattenType, origin, angle, orientation);
       }
-    }
-  }
-
-  for (MapChunk* chunk : chunks)
-  {
-    chunk->recalcNorms();
-  }
-}
-
-void World::flattenTerrain(float x, float z, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, float angle, float orientation)
-{
-  std::vector<MapChunk*> chunks;
-
-  for (MapTile* tile : mapIndex->tiles_in_range(x, z, radius))
-  {
-    for (size_t ty = 0; ty < 16; ++ty)
-    {
-      for (size_t tx = 0; tx < 16; ++tx)
+    , [] (MapChunk* chunk)
       {
-        MapChunk* chunk = tile->getChunk(ty, tx);
-        if (chunk->flattenTerrain(x, z, remain, radius, BrushType, flattenType, origin, angle, orientation))
-        {
-          chunks.emplace_back(chunk);
-          mapIndex->setChanged(tile);
-        }
+        chunk->recalcNorms();
       }
-    }
-  }
-
-  for (MapChunk* chunk : chunks)
-  {
-    chunk->recalcNorms();
-  }
+    );
 }
 
 void World::blurTerrain(float x, float z, float remain, float radius, int BrushType)
 {
-  std::vector<MapChunk*> chunks;
-
-  for (MapTile* tile : mapIndex->tiles_in_range(x, z, radius))
-  {
-    for (size_t ty = 0; ty < 16; ++ty)
-    {
-      for (size_t tx = 0; tx < 16; ++tx)
+  for_all_chunks_in_range
+    ( x, z, radius
+    , [&] (MapChunk* chunk)
       {
-        MapChunk* chunk = tile->getChunk(ty, tx);
-        if (chunk->blurTerrain(x, z, remain, radius, BrushType))
-        {
-          chunks.emplace_back(chunk);
-          mapIndex->setChanged(tile);
-        }
+        return chunk->blurTerrain(x, z, remain, radius, BrushType);
       }
-    }
-  }
-
-  for (MapChunk* chunk : chunks)
-  {
-    chunk->recalcNorms();
-  }
+    , [] (MapChunk* chunk)
+      {
+        chunk->recalcNorms();
+      }
+    );
 }
 
 bool World::paintTexture(float x, float z, Brush *brush, float strength, float pressure, OpenGL::Texture* texture)
 {
-  bool succ = false;
-
-  for (MapTile* tile : mapIndex->tiles_in_range(x, z, brush->getRadius()))
-  {
-    for (size_t ty = 0; ty < 16; ++ty)
-    {
-      for (size_t tx = 0; tx < 16; ++tx)
+  return for_all_chunks_in_range
+    ( x, z, brush->getRadius()
+    , [&] (MapChunk* chunk)
       {
-        if (tile->getChunk(ty, tx)->paintTexture(x, z, brush, strength, pressure, texture))
-        {
-          succ |= true;
-          mapIndex->setChanged(tile);
-        }
+        return chunk->paintTexture(x, z, brush, strength, pressure, texture);
       }
-    }
-  }
-
-  return succ;
+    );
 }
 
 bool World::sprayTexture(float x, float z, Brush *brush, float strength, float pressure, float spraySize, float sprayPressure, OpenGL::Texture* texture)
@@ -1624,184 +1507,50 @@ bool World::sprayTexture(float x, float z, Brush *brush, float strength, float p
 
 void World::eraseTextures(float x, float z)
 {
-  tile_index tile(math::vector_3d(x, 0, z));
-  mapIndex->setChanged(tile);
-
-  LogDebug << "Erasing Textures at " << x << " and " << z << std::endl;
-
-  for (size_t j = tile.z - 1; j < tile.z + 1; ++j)
-  {
-    for (size_t i = tile.x - 1; i < tile.x + 1; ++i)
-    {
-      tile_index curTile = tile_index(i, j);
-      if (mapIndex->tileLoaded(curTile))
-      {
-        MapTile* mTile = mapIndex->getTile(curTile);
-
-        for (size_t ty = 0; ty < 16; ++ty)
-        {
-          for (size_t tx = 0; tx < 16; ++tx)
-          {
-            MapChunk* chunk = mTile->getChunk(ty, tx);
-            if (chunk->xbase < x && chunk->xbase + CHUNKSIZE > x && chunk->zbase < z && chunk->zbase + CHUNKSIZE > z)
-            {
-              chunk->eraseTextures();
-              mapIndex->setChanged(curTile);
-            }
-          }
-        }
-      }
-    }
-  }
-
-
+  for_chunk_at(x, z, [](MapChunk* chunk) {chunk->eraseTextures();});
 }
 
 void World::overwriteTextureAtCurrentChunk(float x, float z, OpenGL::Texture* oldTexture, OpenGL::Texture* newTexture)
 {
-  tile_index tile(math::vector_3d(x, 0, z));
-  mapIndex->setChanged(tile);
-
   LogDebug << "Switching Textures at " << x << " and " << z << std::endl;
-
-  for (size_t j = tile.z - 1; j < tile.z + 1; ++j)
-  {
-    for (size_t i = tile.x - 1; i < tile.x + 1; ++i)
-    {
-      tile_index curTile = tile_index(i, j);
-      if (mapIndex->tileLoaded(curTile))
-      {
-        MapTile* mTile = mapIndex->getTile(curTile);
-
-        for (size_t ty = 0; ty < 16; ++ty)
-        {
-          for (size_t tx = 0; tx < 16; ++tx)
-          {
-            MapChunk* chunk = mTile->getChunk(ty, tx);
-            if (chunk->xbase < x && chunk->xbase + CHUNKSIZE > x && chunk->zbase < z && chunk->zbase + CHUNKSIZE > z)
-            {
-              chunk->switchTexture(oldTexture, newTexture);
-              mapIndex->setChanged(curTile);
-            }
-          }
-        }
-      }
-    }
-  }
+  for_chunk_at(x, z, [&](MapChunk* chunk) {chunk->switchTexture(oldTexture, newTexture);});
 }
 
-void World::addHole(float x, float z, bool big)
+void World::setHole(float x, float z, bool big, bool hole)
 {
-  tile_index tile(math::vector_3d(x, 0, z));
-
-  for (size_t j = tile.z - 1; j < tile.z + 1; ++j)
-  {
-    for (size_t i = tile.x - 1; i < tile.x + 1; ++i)
-    {
-      tile_index curTile = tile_index(i, j);
-      if (mapIndex->tileLoaded(curTile))
-      {
-        MapTile* mTile = mapIndex->getTile(curTile);
-
-        for (size_t ty = 0; ty < 16; ++ty)
-        {
-          for (size_t tx = 0; tx < 16; ++tx)
-          {
-            MapChunk* chunk = mTile->getChunk(ty, tx);
-            // check if the cursor is not undermap
-            if (chunk->xbase < x && chunk->xbase + CHUNKSIZE > x && chunk->zbase < z && chunk->zbase + CHUNKSIZE > z)
-            {
-              mapIndex->setChanged(curTile);
-              int k = (int)((x - chunk->xbase) / MINICHUNKSIZE);
-              int l = (int)((z - chunk->zbase) / MINICHUNKSIZE);
-              if (big)
-              {
-                chunk->addHoleBig(k, l);
-              }
-              else
-              {
-                chunk->addHole(k, l);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  for_chunk_at(x, z, [&](MapChunk* chunk) { chunk->setHole(x, z, big, hole); });
 }
 
-void World::removeHole(float x, float z, bool big)
+void World::setHoleADT(float x, float z, bool hole)
 {
-  tile_index tile(math::vector_3d(x, 0, z));
-
-  for (size_t j = tile.z - 1; j < tile.z + 1; ++j)
-  {
-    for (size_t i = tile.x - 1; i < tile.x + 1; ++i)
-    {
-      tile_index curTile = tile_index(i, j);
-      if (mapIndex->tileLoaded(curTile))
-      {
-        MapTile* mTile = mapIndex->getTile(curTile);
-
-        for (size_t ty = 0; ty < 16; ++ty)
-        {
-          for (size_t tx = 0; tx < 16; ++tx)
-          {
-            MapChunk* chunk = mTile->getChunk(ty, tx);
-
-            if (chunk->xbase < x && chunk->xbase + CHUNKSIZE > x && chunk->zbase < z && chunk->zbase + CHUNKSIZE > z)
-            {
-              mapIndex->setChanged(curTile);
-
-              int k = (int)((x - chunk->xbase) / MINICHUNKSIZE);
-              int l = (int)((z - chunk->zbase) / MINICHUNKSIZE);
-              if (big)
-              {
-                chunk->removeHoleBig(k, l);
-              }
-              else
-              {
-                chunk->removeHole(k, l);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) { chunk->setHole(x, z, true, hole); });
 }
 
-void World::addHoleADT(float x, float z)
-{
-  tile_index tile(math::vector_3d(x, 0, z));
 
-  MapTile* mTile = mapIndex->getTile(tile);
-  mapIndex->setChanged(tile);
+template<typename Fun>
+  void World::for_all_chunks_on_tile (float x, float z, Fun&& fun)
+{
+  MapTile* tile (mapIndex->getTile (math::vector_3d (x, 0, z)));
+  mapIndex->setChanged (tile);
 
   for (size_t ty = 0; ty < 16; ++ty)
   {
     for (size_t tx = 0; tx < 16; ++tx)
     {
-      mTile->getChunk(ty, tx)->addHoleEverywhere();
+      fun (tile->getChunk (ty, tx));
     }
   }
 }
 
-void World::removeHoleADT(float x, float z)
-{
-  tile_index tile(math::vector_3d(x, 0, z));
-
-  MapTile* mTile = mapIndex->getTile(tile);
-  mapIndex->setChanged(x, z);
-
-  for (size_t ty = 0; ty < 16; ++ty)
+  template<typename Fun>
+  void World::for_chunk_at(float x, float z, Fun&& fun)
   {
-    for (size_t tx = 0; tx < 16; ++tx)
-    {
-      mTile->getChunk(tx, ty)->removeAllHoles();
-    }
+    MapTile* tile(mapIndex->getTile(math::vector_3d(x, 0, z)));
+    mapIndex->setChanged(tile);
+    
+    fun(tile->getChunk((x - tile->xbase) / CHUNKSIZE, (z - tile->zbase) / CHUNKSIZE));
   }
-}
+
 
 void World::jumpToCords(math::vector_3d pos)
 {
@@ -2084,169 +1833,30 @@ unsigned int World::getMapID()
   return this->mMapId;
 }
 
-
-void World::moveHeight(int id, const tile_index& tile)
+void World::setBaseTexture(float x, float z)
 {
-
-  // set the Area ID on a tile x,z on all chunks
-  for (int j = 0; j<16; ++j)
+  if (!!UITexturingGUI::getSelectedTexture())
   {
-    for (int i = 0; i<16; ++i)
+    for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) 
     {
-      moveHeight(id, tile, j, i);
-    }
-  }
-
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (!curTile)
-  {
-    return;
-  }
-
-  for (int j = 0; j<16; ++j)
-  {
-    for (int i = 0; i<16; ++i)
-    {
-      // set the Area ID on a tile x,z on the chunk cx,cz
-      MapChunk *curChunk = curTile->getChunk((size_t)j, (size_t)i);
-      curChunk->recalcNorms();
-    }
-  }
-
-  mapIndex->setChanged(tile);
-}
-
-void World::moveHeight(int /*id*/, const tile_index& tile, int _cx, int _cz)
-{
-  // set the Area ID on a tile x,z on the chunk cx,cz
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (!curTile)
-  {
-    return;
-  }
-
-  mapIndex->setChanged(tile);
-  MapChunk* curChunk = curTile->getChunk((size_t)_cx, (size_t)_cz);
-  if (!curChunk)
-  {
-    return;
-  }
-
-  curChunk->vmin.y = 9999999.0f;
-  curChunk->vmax.y = -9999999.0f;
-
-  float heightDelta = 0.0f;
-  auto&& selection = gWorld->GetCurrentSelection();
-
-  if (selection)
-  {
-    if (selection->which() == eEntry_MapChunk)
-    {
-      // chunk selected
-      heightDelta = gWorld->camera.y - boost::get<selected_chunk_type> (*selection).chunk->py;
-    }
-  }
-  if (heightDelta * heightDelta <= 0.1f) return;
-
-  for (int i = 0; i < mapbufsize; ++i)
-  {
-    curChunk->mVertices[i].y = curChunk->mVertices[i].y + heightDelta;
-
-    curChunk->vmin.y = std::min(curChunk->vmin.y, curChunk->mVertices[i].y);
-    curChunk->vmax.y = std::max(curChunk->vmax.y, curChunk->mVertices[i].y);
-  }
-
-  gl.bindBuffer(GL_ARRAY_BUFFER, curChunk->vertices);
-  gl.bufferData(GL_ARRAY_BUFFER, sizeof(curChunk->mVertices), curChunk->mVertices, GL_STATIC_DRAW);
-
-  curChunk->recalcNorms();
-}
-
-void World::setBaseTexture(const tile_index& tile)
-{
-  if (!UITexturingGUI::getSelectedTexture())
-  {
-    return;
-  }
-
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (!curTile)
-  {
-    return;
-  }
-
-  mapIndex->setChanged(tile);
-
-  // clear all textures on the adt and set selected texture as base texture
-  for (int j = 0; j<16; ++j)
-  {
-    for (int i = 0; i<16; ++i)
-    {
-      MapChunk *curChunk = curTile->getChunk((size_t)j, (size_t)i);
-      curChunk->eraseTextures();
-      curChunk->addTexture(UITexturingGUI::getSelectedTexture());
+      chunk->eraseTextures();
+      chunk->addTexture(UITexturingGUI::getSelectedTexture());
       UITexturingGUI::getSelectedTexture()->addReference();
-    }
+    });
   }
 }
 
-void World::swapTexture(const tile_index& tile, OpenGL::Texture *tex)
+void World::swapTexture(float x, float z, OpenGL::Texture *tex)
 {
-  if (!UITexturingGUI::getSelectedTexture())
+  if (!!UITexturingGUI::getSelectedTexture())
   {
-    return;
-  }
-
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (!curTile)
-  {
-    return;
-  }
-
-  // clear all textures on the adt and set selected texture as base texture
-  for (int j = 0; j<16; ++j)
-  {
-    for (int i = 0; i<16; ++i)
-    {
-      MapChunk *curChunk = curTile->getChunk((size_t)j, (size_t)i);
-      curChunk->switchTexture(tex, UITexturingGUI::getSelectedTexture());
-    }
-  }
-
-  mapIndex->setChanged(tile);
+    for_all_chunks_on_tile(camera.x, camera.z, [&](MapChunk* chunk) { chunk->switchTexture(tex, UITexturingGUI::getSelectedTexture()); });
+  }  
 }
 
-void World::removeTexDuplicateOnADT(const tile_index& tile)
+void World::removeTexDuplicateOnADT(float x, float z)
 {
-  MapTile* mTile = mapIndex->getTile(tile);
-
-  if (!mTile)
-  {
-    return;
-  }
-
-  bool changed = false;
-
-  // clear all textures on the adt and set selected texture as base texture
-  for (int j = 0; j<16; ++j)
-  {
-    for (int i = 0; i<16; ++i)
-    {
-      if (mTile->getChunk((size_t)j, (size_t)i)->textureSet->removeDuplicate())
-      {
-        changed = true;
-      }
-    }
-  }
-
-  if (changed)
-  {
-    mapIndex->setChanged(tile);
-  }
+  for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) { chunk->textureSet->removeDuplicate(); } );
 }
 
 void World::saveWDT()
@@ -2264,13 +1874,8 @@ void World::saveWDT()
 
 bool World::canWaterSave(const tile_index& tile)
 {
-
-  if (!mapIndex->tileLoaded(tile)) //! \todo else there are null pointers
-  {
-    return false;
-  }
-
-  return mapIndex->getTile(tile)->canWaterSave();
+  MapTile* mt = mapIndex->getTile(tile);
+  return !!mt && mt->canWaterSave();
 }
 
 void World::setWaterHeight(const tile_index& tile, float h)
@@ -2372,7 +1977,7 @@ int World::getWaterType(const tile_index& tile)
   }
   else
   {
-    return false;
+    return 0;
   }
 }
 
@@ -2517,35 +2122,4 @@ void World::clearHiddenModelList()
   Environment::getInstance()->showModelFromHiddenList = true;
   ModelManager::clearHiddenModelList();
   WMOManager::clearHiddenWMOList();
-}
-
-void World::ensureModelIdUniqueness()
-{
-  std::set<std::size_t> ids;
-
-  std::map<int, WMOInstance> wmos;
-  std::swap(mWMOInstances, wmos);
-  
-  for (WMOInstance& instance : wmos | boost::adaptors::map_values)
-  {
-    if (!ids.emplace(instance.mUniqueID).second)
-    {
-      instance.mUniqueID = mapIndex->newGUID();
-      ids.emplace(instance.mUniqueID);
-    }
-    mWMOInstances.emplace(instance.mUniqueID, std::move(instance));
-  }
-
-  std::map<int, ModelInstance> m2s;
-  std::swap(mModelInstances, m2s);
-
-  for (ModelInstance& instance : m2s | boost::adaptors::map_values)
-  {
-    if (!ids.emplace(instance.d1).second)
-    {
-      instance.d1 = mapIndex->newGUID();
-      ids.emplace(instance.d1);
-    }
-    mModelInstances.emplace(instance.d1, std::move(instance));
-  }
 }
