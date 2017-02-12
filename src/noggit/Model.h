@@ -9,9 +9,9 @@
 #include <noggit/Animated.h> // Animation::M2Value
 #include <noggit/AsyncObject.h> // AsyncObject
 #include <noggit/MPQ.h>
-#include <noggit/Manager.h> // ManagedItem
 #include <noggit/ModelHeaders.h>
 #include <noggit/Particle.h>
+#include <noggit/TextureManager.h>
 #include <noggit/Video.h> // GLuint
 
 #include <string>
@@ -39,7 +39,11 @@ public:
 
   bool calc;
   void calcMatrix(Bone* allbones, int anim, int time);
-  void init(const MPQFile& f, const ModelBoneDef &b, int *global, MPQFile **animfiles);
+  Bone ( const MPQFile& f, 
+         const ModelBoneDef &b, 
+         int *global, 
+         const std::vector<std::unique_ptr<MPQFile>>& animation_files
+       );
 
 };
 
@@ -51,7 +55,7 @@ public:
   math::vector_3d tval, rval, sval;
 
   void calc(int anim, int time);
-  void init(const MPQFile& f, const ModelTexAnimDef &mta, int *global);
+  TextureAnim(const MPQFile& f, const ModelTexAnimDef &mta, int *global);
   void setup(int anim);
 };
 
@@ -59,13 +63,13 @@ struct ModelColor {
   Animation::M2Value<math::vector_3d> color;
   Animation::M2Value<float, int16_t> opacity;
 
-  void init(const MPQFile& f, const ModelColorDef &mcd, int *global);
+  ModelColor(const MPQFile& f, const ModelColorDef &mcd, int *global);
 };
 
 struct ModelTransparency {
   Animation::M2Value<float, int16_t> trans;
 
-  void init(const MPQFile& f, const ModelTransDef &mtd, int *global);
+  ModelTransparency(const MPQFile& f, const ModelTransDef &mtd, int *global);
 };
 
 // copied from the .mdl docs? this might be completely wrong
@@ -109,17 +113,14 @@ struct ModelRenderPass {
 };
 
 struct ModelCamera {
-  bool ok;
 
   math::vector_3d pos, target;
   float nearclip, farclip, fov;
   Animation::M2Value<math::vector_3d> tPos, tTarget;
   Animation::M2Value<float> rot;
 
-  void init(const MPQFile& f, const ModelCameraDef &mcd, int *global);
+  ModelCamera(const MPQFile& f, const ModelCameraDef &mcd, int *global);
   void setup(int time = 0);
-
-  ModelCamera() :ok(false) {}
 };
 
 struct ModelLight {
@@ -130,71 +131,59 @@ struct ModelLight {
   //Animation::M2Value<float> attStart,attEnd;
   //Animation::M2Value<bool> Enabled;
 
-  void init(const MPQFile&  f, const ModelLightDef &mld, int *global);
-  void setup(int time, OpenGL::Light l);
+  ModelLight(const MPQFile&  f, const ModelLightDef &mld, int *global);
+  void setup(int time, opengl::light l);
 };
 
-class Model : public ManagedItem, public AsyncObject {
+struct model_vertex
+{
+  ::math::vector_3d position;
+  ::math::vector_3d normal;
+  ::math::vector_2d texcoords;
+};
 
-  GLuint ModelDrawList;
-  //GLuint TileModeModelDrawList;
+struct model_vertex_parameter
+{
+  uint8_t weights[4];
+  uint8_t bones[4];
+};
 
-  GLuint vbuf, nbuf, tbuf;
-  size_t vbufsize;
-  bool animated;
-  bool animGeometry, animTextures, animBones;
-  MPQFile **animfiles;
-
-
-  void init(const MPQFile& f);
-
-
-  TextureAnim *texanims;
-  ModelAnimation *anims;
-  int *globalSequences;
-  ModelColor *colors;
-  ModelTransparency *transparency;
-  ModelLight *lights;
-  ParticleSystem *particleSystems;
-  RibbonEmitter *ribbons;
-
-  void drawModel( /*bool unlit*/);
-
-  void initCommon(const MPQFile& f);
-  bool isAnimated(const MPQFile& f);
-  void initAnimated(const MPQFile& f);
-  void initStatic(const MPQFile& f);
-
-  ModelVertex *origVertices;
-  math::vector_3d *vertices, *normals;
-  uint16_t *indices;
-  size_t nIndices;
-  std::vector<ModelRenderPass> passes;
-
-  void animate(int anim);
-  void calcBones(int anim, int time);
-
-  void lightsOn(OpenGL::Light lbase);
-  void lightsOff(OpenGL::Light lbase);
-
+class Model : public AsyncObject
+{
 public:
-  std::string _filename; //! \todo ManagedItem already has a name. Use that?
-  ModelCamera cam;
-  Bone *bones;
-  ModelHeader header;
+   Model(const std::string& name);
+  ~Model();
+
+  void draw();
+  void drawTileMode();
+
+  std::vector<float> intersect (math::ray const&);
+
+  void updateEmitters(float dt);
+
+  virtual void finishLoading();
 
   // ===============================
   // Toggles
+  // ===============================
   bool *showGeosets;
 
   // ===============================
   // Texture data
   // ===============================
-  std::vector<OpenGL::Texture*> _textures;
+  std::vector<scoped_blp_texture_reference> _textures;
   std::vector<std::string> _textureFilenames;
-  std::vector<OpenGL::Texture*> _replaceTextures;
+  std::map<std::size_t, scoped_blp_texture_reference> _replaceTextures;
   std::vector<int> _specialTextures;
   std::vector<bool> _useReplaceTextures;
+
+  // ===============================
+  // Misc ?
+  // ===============================
+  std::string _filename; //! \todo ManagedItem already has a name. Use that?
+  boost::optional<ModelCamera> cam;
+  std::vector<Bone> bones;
+  ModelHeader header;
 
   float rad;
   float trans;
@@ -202,17 +191,54 @@ public:
   bool mPerInstanceAnimation;
   int anim, animtime;
 
-  Model(const std::string& name);
-  ~Model();
-  void draw();
-  void drawTileMode();
-  std::vector<float> intersect (math::ray const&);
-  void updateEmitters(float dt);
+private:
+  void initCommon(const MPQFile& f);
+  bool isAnimated(const MPQFile& f);
+  void initAnimated(const MPQFile& f);
+
+  void animate(int anim);
+  void calcBones(int anim, int time);
+
+  void lightsOn(opengl::light lbase);
+  void lightsOff(opengl::light lbase);
+
+  void upload();
+
+  bool _finished_upload;
+
+  // ===============================
+  // Geometry
+  // ===============================
+  GLuint _vertices_buffer;
+
+  std::vector<model_vertex> _vertices;
+  std::vector<model_vertex> _current_vertices;
+
+  std::vector<uint16_t> _indices;
+
+  std::vector<model_vertex_parameter> _vertices_parameters;
+
+  std::vector<ModelRenderPass> _passes;
+
+  // ===============================
+  // Animation
+  // ===============================
+  bool animated;
+  bool animGeometry, animTextures, animBones;
+
+  std::vector<ParticleSystem> _particles;
+  std::vector<RibbonEmitter> _ribbons;
+  
+  std::vector<ModelAnimation> _animations;
+  std::vector<int> _global_sequences;
+  std::vector<TextureAnim> _texture_animations;
+
+  // ===============================
+  // Material
+  // ===============================
+  std::vector<ModelColor> _colors;
+  std::vector<ModelTransparency> _transparency;
+  std::vector<ModelLight> _lights;
 
   friend struct ModelRenderPass;
-
-  virtual void finishLoading();
-
-  bool hidden;
-  void toggleVisibility();
 };

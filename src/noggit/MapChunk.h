@@ -6,8 +6,11 @@
 #include <noggit/MapTile.h> // MapTile
 #include <noggit/ModelInstance.h>
 #include <noggit/Selection.h>
+#include <noggit/TextureManager.h>
 #include <noggit/Video.h> // GLuint
 #include <noggit/WMOInstance.h>
+#include <noggit/texture_set.hpp>
+#include <opengl/scoped.hpp>
 #include <opengl/texture.hpp>
 
 class MPQFile;
@@ -17,7 +20,7 @@ namespace math
 }
 class Brush;
 class Alphamap;
-class TextureSet;
+class ChunkWater;
 class sExtendableArray;
 class Frustum;
 
@@ -29,7 +32,6 @@ class MapChunk
 private:
   float r;
 
-  bool mBigAlpha;
   bool hasMCCV;
 
   int holes;
@@ -39,10 +41,8 @@ private:
   unsigned char mShadowMap[8 * 64];
   opengl::texture shadow;
 
-  StripType *strip;
-  int striplen;
-
-  bool water;
+  std::vector<StripType> strip_with_holes;
+  std::vector<StripType> strip_without_holes;
 
   math::vector_3d mNormals[mapbufsize];
   math::vector_3d mMinimap[mapbufsize];
@@ -56,7 +56,6 @@ private:
 
 public:
   MapChunk(MapTile* mt, MPQFile* f, bool bigAlpha);
-  ~MapChunk();
 
   MapTile *mt;
   math::vector_3d vmin, vmax, vcenter;
@@ -67,42 +66,62 @@ public:
   float xbase, ybase, zbase;
 
   unsigned int Flags;
+  bool use_big_alphamap;
 
+  TextureSet _texture_set;
 
-  TextureSet* textureSet;
+  opengl::scoped::buffers<4> _buffers;
+  GLuint const& vertices = _buffers[0];
+  GLuint const& normals = _buffers[1];
+  GLuint const& indices = _buffers[2];
+  GLuint const& mccvEntry = _buffers[3];
 
-  GLuint vertices, normals, indices, minimap, minishadows, mccvEntry;
+  GLuint minimap, minishadows;
 
   math::vector_3d mVertices[mapbufsize];
 
-  void draw (Frustum const&); //! \todo only this function should be public, all others should be called from it
+  void draw ( Frustum const&
+            , bool highlightPaintableChunks
+            , bool draw_contour
+            , bool draw_paintability_overlay
+            , bool draw_chunk_flag_overlay
+            , bool draw_water_overlay
+            , bool draw_areaid_overlay
+            , bool draw_wireframe_overlay
+            );
+  //! \todo only this function should be public, all others should be called from it
 
   void drawContour();
   void intersect (math::ray const&, selection_result*);
-  void drawLines (Frustum const&);
+  void drawLines (opengl::scoped::use_program&, Frustum const&);
   void drawTextures();
-  bool ChangeMCCV(float x, float z, float change, float radius, bool editMode);
-  void ClearShader();
-  void SetWater(bool w);
-  bool GetWater();
+  bool ChangeMCCV(math::vector_3d const& pos, float change, float radius, bool editMode);
 
+  ChunkWater* liquid_chunk() const;
+
+  void updateVerticesData();
   void recalcNorms();
 
   //! \todo implement Action stack for these
-  bool changeTerrain(float x, float z, float change, float radius, int BrushType);
-  bool flattenTerrain(float x, float z, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, math::degrees angle, math::degrees orientation);
-  bool blurTerrain(float x, float z, float remain, float radius, int BrushType);
+  bool changeTerrain(math::vector_3d const& pos, float change, float radius, int BrushType, float inner_radius);
+  bool flattenTerrain(math::vector_3d const& pos, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, math::degrees angle, math::degrees orientation);
+  bool blurTerrain(math::vector_3d const& pos, float remain, float radius, int BrushType);
+
+  void selectVertex(math::vector_3d const& pos, float radius, std::set<math::vector_3d*>& vertices);
+  void fixVertices(std::set<math::vector_3d*>& selected);
+  // for the vertex tool
+  bool isBorderChunk(std::set<math::vector_3d*>& selected);
 
   //! \todo implement Action stack for these
-  bool paintTexture(float x, float z, Brush *brush, float strength, float pressure, OpenGL::Texture* texture);
-  bool canPaintTexture(OpenGL::Texture* texture);
-  int addTexture(OpenGL::Texture* texture);
-  void switchTexture(OpenGL::Texture* oldTexture, OpenGL::Texture* newTexture);
+  bool paintTexture(math::vector_3d const& pos, Brush *brush, float strength, float pressure, scoped_blp_texture_reference texture);
+  bool canPaintTexture(scoped_blp_texture_reference texture);
+  int addTexture(scoped_blp_texture_reference texture);
+  void switchTexture(scoped_blp_texture_reference oldTexture, scoped_blp_texture_reference newTexture);
   void eraseTextures();
 
   //! \todo implement Action stack for these
   bool isHole(int i, int j);
-  void setHole(float x, float z, bool big, bool add);
+  void setHole(math::vector_3d const& pos, bool big, bool add);
 
   void setFlag(bool value);
   int getFlag();
@@ -123,6 +142,4 @@ public:
   bool fixGapLeft(const MapChunk* chunk);
   // fix the gaps with the chunk above
   bool fixGapAbove(const MapChunk* chunk);
-
-  void toBigAlpha(){ mBigAlpha = true;}
 };

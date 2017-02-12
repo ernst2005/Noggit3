@@ -43,7 +43,8 @@ namespace opengl
         }
 
         std::string errors;
-        while (GLenum error = glGetError())
+        std::size_t error_count = 0;
+        while (GLenum error = glGetError() && error_count < 10)
         {
           switch (error)
           {
@@ -57,7 +58,15 @@ namespace opengl
           case GL_TABLE_TOO_LARGE: errors += " GL_TABLE_TOO_LARGE"; break;
           default: errors += " UNKNOWN_ERROR"; break;
           }
+
+          ++error_count;
         }
+
+        if (error_count == 10 && glGetError())
+        {
+          errors += " and more...";
+        }
+
         if (!errors.empty())
         {
           errors += _extra_info();
@@ -69,6 +78,11 @@ namespace opengl
         }
 #endif
       }
+
+      verify_context_and_check_for_gl_errors (verify_context_and_check_for_gl_errors const&) = delete;
+      verify_context_and_check_for_gl_errors (verify_context_and_check_for_gl_errors&&) = delete;
+      verify_context_and_check_for_gl_errors& operator= (verify_context_and_check_for_gl_errors const&) = delete;
+      verify_context_and_check_for_gl_errors& operator= (verify_context_and_check_for_gl_errors&&) = delete;
     };
   }
 
@@ -293,6 +307,11 @@ namespace opengl
     verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
     return glLineWidth (width);
   }
+  void context::lineStipple (GLint factor, GLushort pattern)
+  {
+    verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
+    return glLineStipple (factor, pattern);
+  }
 
   void context::pointParameterf (GLenum pname, GLfloat param)
   {
@@ -317,7 +336,7 @@ namespace opengl
   void context::pointSize (GLfloat size)
   {
     verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
-    return glLineWidth (size);
+    return glPointSize (size);
   }
 
   void context::hint (GLenum target, GLenum mode)
@@ -809,6 +828,11 @@ namespace opengl
     verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
     return glUniform1i (location, value);
   }
+  void context::uniform1ui (GLint location, GLuint value)
+  {
+    verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
+    return glUniform1ui (location, value);
+  }
   void context::uniform1f (GLint location, GLfloat value)
   {
     verify_context_and_check_for_gl_errors const _ (BOOST_CURRENT_FUNCTION);
@@ -919,6 +943,7 @@ namespace opengl
     return bufferData (target, size, data, usage);
   }
   template void context::bufferData<GL_ARRAY_BUFFER> (GLuint buffer, GLsizeiptr size, GLvoid const* data, GLenum usage);
+  template void context::bufferData<GL_ELEMENT_ARRAY_BUFFER> (GLuint buffer, GLsizeiptr size, GLvoid const* data, GLenum usage);
 
   void context::vertexPointer (GLuint buffer, GLint size, GLenum type, GLsizei stride, GLvoid const* pointer)
   {

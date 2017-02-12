@@ -6,8 +6,7 @@
 
 #include <noggit/FreeType.h> // fonts.
 #include <noggit/ui/Frame.h>
-
-namespace OpenGL { class Texture; }
+#include <noggit/TextureManager.h>
 
 class UIWindow : public UIFrame
 {
@@ -20,14 +19,11 @@ public:
   float getH(){ return this->_height; }
 
 protected:
-  OpenGL::Texture* texture;
-  std::string _textureFilename;
-
+  scoped_blp_texture_reference texture;
 
 public:
   UIWindow(float xPos, float yPos, float w, float h);
   UIWindow(float xPos, float yPos, float w, float h, const std::string& pTexture);
-  ~UIWindow();
   UIFrame::Ptr processLeftClick(float mx, float my);
   void render() const;
 };

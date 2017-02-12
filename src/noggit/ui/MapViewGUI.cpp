@@ -95,7 +95,7 @@ UIMapViewGUI::UIMapViewGUI(MapView *setMapview)
   addChild(guiCurrentTexture);
 
   // UIToolbar
-  guiToolbar = new UIToolbar(6.0f, 145.0f);
+  guiToolbar = new UIToolbar(6.0f, 145.0f, [this] (editing_mode mode) { theMapview->set_editing_mode (mode); });
   addChild(guiToolbar);
 
 
@@ -129,10 +129,11 @@ UIMapViewGUI::UIMapViewGUI(MapView *setMapview)
   TexturePicker->movable(true);
   addChild(TexturePicker);
 
-  TextureSwitcher = new UITextureSwitcher(100, 100);
-  TextureSwitcher->setPosition(video.xres() - TextureSwitcher->getW(), 40);
+  // create settings_paint window here otherwise TextureSwitcher use an outdated pointer
+  settings_paint = new UIWindow(video.xres() - 190.0f, 40.0f, 180.0f, 280.0f);
+
+  TextureSwitcher = new UITextureSwitcher (video.xres(), 40, settings_paint);
   TextureSwitcher->hide();
-  TextureSwitcher->movable(true);
   addChild(TextureSwitcher);
 
   // Cursor Switcher
@@ -212,7 +213,7 @@ void UIMapViewGUI::render() const
   UIFrame::render();
 
   //! \todo Make these some textUIs.
-  app.getArial16().shprint(510, 4, gAreaDB.getAreaName(gWorld->getAreaID()));
+  app.getArial16().shprint(510, 4, gAreaDB.getAreaName(gWorld->getAreaID (gWorld->camera)));
 
   int time = static_cast<int>(gWorld->time) % 2880;
   std::stringstream timestrs;
@@ -242,7 +243,8 @@ void UIMapViewGUI::render() const
   guiStatusbar->setLeftInfo(statusbarInfo.str());
 
   guiStatusbar->setRightInfo("");
-  guiWater->updatePos(misc::FtoIround((gWorld->camera.x - (TILESIZE / 2)) / TILESIZE), misc::FtoIround((gWorld->camera.z - (TILESIZE / 2)) / TILESIZE));
+  tile_index tile(gWorld->camera);
+  guiWater->updatePos(tile);
 
   if (!_tilemode && !guidetailInfos->hidden())
   {
@@ -285,13 +287,15 @@ void UIMapViewGUI::render() const
                      << "\nposition X/Y/Z: " << instance->pos.x << " / " << instance->pos.y << " / " << instance->pos.z
                      << "\nrotation X/Y/Z: " << instance->dir.x << " / " << instance->dir.y << " / " << instance->dir.z
                      << "\ndoodad set: " << instance->doodadset
-                     << "\ntextures used: " << instance->wmo->nTextures;
+                     << "\ntextures used: " << instance->wmo->textures.size();
 
-          for (unsigned int j = 0; j < std::min(instance->wmo->nTextures, 8U); j++)
+
+          const unsigned int texture_count (std::min((unsigned int)(instance->wmo->textures.size()), 8U));
+          for (unsigned int j = 0; j < texture_count; j++)
           {
             detailInfo << "\n " << (j + 1) << ": " << instance->wmo->textures[j];
           }
-          if (instance->wmo->nTextures > 25)
+          if (instance->wmo->textures.size() > 25)
           {
             detailInfo << "\n and more.";
           }
@@ -314,7 +318,7 @@ void UIMapViewGUI::render() const
                      << (flags & FLAG_LQ_RIVER ? "river " : "")
                      << (flags & FLAG_LQ_OCEAN ? "ocean " : "")
                      << (flags & FLAG_LQ_MAGMA ? "lava" : "")
-                     << "\ntextures used: " << chunk->textureSet->num();
+                     << "\ntextures used: " << chunk->_texture_set.num();
 
           //! \todo get a list of textures and their flags as well as detail doodads.
           /*

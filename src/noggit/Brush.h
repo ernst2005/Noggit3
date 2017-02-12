@@ -2,10 +2,9 @@
 
 #pragma once
 
-namespace OpenGL
-{
-  class Texture;
-}
+#include <opengl/texture.hpp>
+
+#include <memory>
 
 class Brush
 {
@@ -14,7 +13,7 @@ private:
   float iradius;
   float oradius;
   float radius;
-  OpenGL::Texture* _texture;
+  std::unique_ptr<opengl::texture> _texture;
   char tex[256 * 256];
   bool update;
 
@@ -25,7 +24,7 @@ public:
   float getHardness();
   float getRadius();
   float getValue(float dist);
-  OpenGL::Texture* getTexture();
+  opengl::texture* getTexture();
   bool needUpdate();
   void init();
 };

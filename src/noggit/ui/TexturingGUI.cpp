@@ -13,6 +13,7 @@
 #include <noggit/MapChunk.h>
 #include <noggit/Misc.h>
 #include <noggit/MPQ.h>
+#include <noggit/Project.h>
 #include <noggit/application.h> // app.getArial14(), app.getapp.getArialn13()()
 #include <noggit/TextureManager.h> // TextureManager, Texture
 #include <noggit/ui/Button.h> // UIButton
@@ -23,6 +24,12 @@
 #include <noggit/ui/Texture.h> // UITexture
 #include <noggit/ui/Toolbar.h> // Toolbar
 #include <noggit/Video.h>
+
+#include <unordered_set>
+
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
+#include <boost/range/iterator_range.hpp>
 
 //! \todo  Get this whole thing in a seperate class.
 
@@ -35,22 +42,20 @@ int pal_cols;
 //! \todo  Maybe get this out?
 bool gFilenameFiltersInited = false;
 
-extern std::list<std::string> gListfile;
-
 std::map<int, std::string> gFilenameFilters;
 std::vector<std::string> gActiveFilenameFilters;
 std::vector<std::string> gActiveDirectoryFilters;
 std::vector<std::string> textureNames;
-std::vector<std::string> specularTextureNames;
 bool showOnlySpecularTextures = true;
+std::unordered_set<std::string> textures_with_specular_variant;
 std::vector<std::string> tilesetDirectories;
-std::vector<OpenGL::Texture*> gTexturesInList;
+std::vector<scoped_blp_texture_reference> gTexturesInList;
 
 //Texture Palette Window
 UICloseWindow  *windowTexturePalette;
 
 UITexture  *curTextures[64];
-OpenGL::Texture* gTexturesInPage[64];
+std::map<int, scoped_blp_texture_reference> gTexturesInPage;
 UIText *gPageNumber;
 
 //Selected Texture Window
@@ -78,7 +83,27 @@ UIText      *chunkTextureNames[4];
 UIText      *chunkTextureFlags[4];
 UIText      *chunkTextureEffectID[4];
 
-OpenGL::Texture* UITexturingGUI::selectedTexture = nullptr;
+boost::optional<scoped_blp_texture_reference> UITexturingGUI::selectedTexture = boost::none;
+
+void load_project_dir_tilesets()
+{
+  auto projet_path(boost::filesystem::path (Project::getInstance()->getPath()) / "tileset");
+  int path_size = projet_path.string().length();
+
+  if (!boost::filesystem::exists(projet_path))
+  {
+    return;
+  }
+
+  for(auto& entry : boost::make_iterator_range(boost::filesystem::recursive_directory_iterator(projet_path), {}))
+  {
+    std::string str = entry.path().string();
+    if (str.find(".blp") != std::string::npos)
+    {
+      gListfile.emplace(noggit::mpq::normalized_filename(str.substr(path_size)));
+    }    
+  }
+}
 
 void LoadTextureNames()
 {
@@ -87,31 +112,24 @@ void LoadTextureNames()
     return;
   }
 
-  bool tilesetsfound = false;
-
   while (!MPQArchive::allFinishedLoading()) MPQArchive::allFinishLoading(); // wait for listfiles.
 
-  for (std::list<std::string>::iterator it = gListfile.begin(); it != gListfile.end(); ++it)
+  load_project_dir_tilesets();
+
+  for (std::string const& entry : gListfile)
   {
-    if (it->find("tileset") != std::string::npos)
+    if (entry.find("tileset") != std::string::npos)
     {
-      tilesetsfound = true;
-      if (it->find("_s.blp") == std::string::npos)
+      auto suffix_pos (entry.find ("_s.blp"));
+      if (suffix_pos  == std::string::npos)
       {
-        textureNames.push_back(*it);
+        textureNames.push_back (entry);
       }
       else
       {
-        it->replace(it->find("_s"), sizeof("_s") - 1, "");
-        specularTextureNames.push_back(*it);
-      }
-    }
-    else
-    {
-      if (tilesetsfound)
-      {
-        // we don't need the rest of this vector as it is sorted.
-        break;
+        std::string specular = entry;
+        specular.erase(suffix_pos, strlen("_s"));
+        textures_with_specular_variant.emplace (specular);
       }
     }
   }
@@ -135,9 +153,11 @@ bool TextureInPalette(const std::string& pFName)
 
   if (showOnlySpecularTextures)
   {
-    if (!std::any_of(std::begin(specularTextureNames), std::end(specularTextureNames), [&](std::string i) { return i == pFName; })) return false;
+    if (!textures_with_specular_variant.count (pFName))
+    {
+      return false;
+    }
   }
-
 
   if (gActiveFilenameFilters.size())
   {
@@ -170,7 +190,7 @@ int gCurrentPage;
 
 void showPage(int pPage)
 {
-  OpenGL::Texture* lSelectedTexture = UITexturingGUI::getSelectedTexture();
+  boost::optional<scoped_blp_texture_reference> lSelectedTexture = UITexturingGUI::getSelectedTexture();
 
   if (gPageNumber)
   {
@@ -182,12 +202,14 @@ void showPage(int pPage)
   int i = 0;
   const unsigned int lIndex = pal_cols * pal_rows * pPage;
 
-  for (std::vector<OpenGL::Texture*>::iterator lPageStart = gTexturesInList.begin() + (lIndex > gTexturesInList.size() ? 0 : lIndex); lPageStart != gTexturesInList.end(); lPageStart++)
+  gTexturesInPage.clear();
+
+  for (std::vector<scoped_blp_texture_reference>::iterator lPageStart = gTexturesInList.begin() + (lIndex > gTexturesInList.size() ? 0 : lIndex); lPageStart != gTexturesInList.end(); lPageStart++)
   {
     curTextures[i]->show();
     curTextures[i]->setTexture(*lPageStart);
     curTextures[i]->setHighlight(*lPageStart == lSelectedTexture);
-    gTexturesInPage[i] = *lPageStart;
+    gTexturesInPage.emplace (i, *lPageStart);
 
     if (++i >= (pal_cols * pal_rows))
     {
@@ -204,18 +226,7 @@ void showPage(int pPage)
 
 void updateTextures()
 {
-  for (OpenGL::Texture *tex : gTexturesInList)
-  {
-    tex->removeReference();
-  }
-
-  gTexturesInList.clear();
   gTexturesInList = TextureManager::getAllTexturesMatching(TextureInPalette);
-
-  for (OpenGL::Texture *tex : gTexturesInList)
-  {
-    tex->addReference();
-  }
 
   showPage(0);
 }
@@ -230,11 +241,11 @@ void changePage(UIFrame*, int direction)
 void UITexturingGUI::updateSelectedTexture()
 {
   if (textureSelected)
-    textureSelected->setTexture(UITexturingGUI::getSelectedTexture());
+    textureSelected->setTexture(*UITexturingGUI::getSelectedTexture());
   if (textSelectedTexture)
-    textSelectedTexture->setText(UITexturingGUI::getSelectedTexture()->filename());
+    textSelectedTexture->setText(UITexturingGUI::getSelectedTexture().get()->filename());
   if (textGui)
-    textGui->guiCurrentTexture->current_texture->setTexture(UITexturingGUI::getSelectedTexture());
+    textGui->guiCurrentTexture->current_texture->setTexture(*UITexturingGUI::getSelectedTexture());
 
 
 }
@@ -244,7 +255,7 @@ void texturePaletteClick(int id)
   if (curTextures[id]->hidden())
     return;
 
-  UITexturingGUI::setSelectedTexture(gTexturesInPage[id]);
+  UITexturingGUI::setSelectedTexture(gTexturesInPage.at (id));
 
   if (UITexturingGUI::getSelectedTexture())
   {
@@ -268,8 +279,7 @@ void LoadTileset(int id)
   {
     if (id == -1 || it->find(tilesetDirectories[id]) != std::string::npos)
     {
-      //! \todo Actually save the texture returned here and do no longer iterate over all cached textures.
-      TextureManager::newTexture(*it);
+      gTexturesInList.emplace_back (*it);
     }
   }
   updateTextures();
@@ -283,55 +293,50 @@ void InitFilenameFilterList()
     return;
 
   gFilenameFiltersInited = true;
-  int counter = 0;
 
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Base"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Brick"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Brush"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Bush"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Clover"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Cobblestone"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Coral"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Crack"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Creep"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Crystal"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Crop"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Dark"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Dead"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Dirt"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Fern"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Flower"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Floor"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Footprints"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Grass"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Ice"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Ivy"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Jungle"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Lava"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Leaf"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Light"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Mud"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Moss"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Mineral"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Needle"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Pebbl"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Road"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Rock"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Root"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Rubble"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Sand"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Slime"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Smooth"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Snow"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Shore"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Water"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Waves"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Web"));
-  gFilenameFilters.insert(std::pair<int, std::string>(counter++, "Weed"));
-
-
-
-
+  gFilenameFilters.emplace (0, "Base");
+  gFilenameFilters.emplace (1, "Brick");
+  gFilenameFilters.emplace (2, "Brush");
+  gFilenameFilters.emplace (3, "Bush");
+  gFilenameFilters.emplace (4, "Clover");
+  gFilenameFilters.emplace (5, "Cobblestone");
+  gFilenameFilters.emplace (6, "Coral");
+  gFilenameFilters.emplace (7, "Crack");
+  gFilenameFilters.emplace (8, "Creep");
+  gFilenameFilters.emplace (9, "Crystal");
+  gFilenameFilters.emplace (10, "Crop");
+  gFilenameFilters.emplace (11, "Dark");
+  gFilenameFilters.emplace (12, "Dead");
+  gFilenameFilters.emplace (13, "Dirt");
+  gFilenameFilters.emplace (14, "Fern");
+  gFilenameFilters.emplace (15, "Flower");
+  gFilenameFilters.emplace (16, "Floor");
+  gFilenameFilters.emplace (17, "Footprints");
+  gFilenameFilters.emplace (18, "Grass");
+  gFilenameFilters.emplace (19, "Ice");
+  gFilenameFilters.emplace (20, "Ivy");
+  gFilenameFilters.emplace (21, "Jungle");
+  gFilenameFilters.emplace (22, "Lava");
+  gFilenameFilters.emplace (23, "Leaf");
+  gFilenameFilters.emplace (24, "Light");
+  gFilenameFilters.emplace (25, "Mud");
+  gFilenameFilters.emplace (26, "Moss");
+  gFilenameFilters.emplace (27, "Mineral");
+  gFilenameFilters.emplace (28, "Needle");
+  gFilenameFilters.emplace (29, "Pebbl");
+  gFilenameFilters.emplace (30, "Road");
+  gFilenameFilters.emplace (31, "Rock");
+  gFilenameFilters.emplace (32, "Root");
+  gFilenameFilters.emplace (33, "Rubble");
+  gFilenameFilters.emplace (34, "Sand");
+  gFilenameFilters.emplace (35, "Slime");
+  gFilenameFilters.emplace (36, "Smooth");
+  gFilenameFilters.emplace (37, "Snow");
+  gFilenameFilters.emplace (38, "Shore");
+  gFilenameFilters.emplace (39, "Water");
+  gFilenameFilters.emplace (40, "Waves");
+  gFilenameFilters.emplace (41, "Web");
+  gFilenameFilters.emplace (42, "Weed");
 }
 
 // -----------------------------------------------
@@ -369,26 +374,19 @@ void clickFilterTexture(bool value, int id)
 
 void clickFileFilterTexture(bool value, int id)
 {
-  if (id == 999)
+  if (value)
   {
-    showOnlySpecularTextures = !showOnlySpecularTextures;
+    std::transform(gFilenameFilters[id].begin(), gFilenameFilters[id].end(), gFilenameFilters[id].begin(), ::tolower);
+    gActiveFilenameFilters.push_back(gFilenameFilters[id]);
   }
   else
   {
-    if (value)
+    for (std::vector<std::string>::iterator it = gActiveFilenameFilters.begin(); it != gActiveFilenameFilters.end(); ++it)
     {
-      std::transform(gFilenameFilters[id].begin(), gFilenameFilters[id].end(), gFilenameFilters[id].begin(), ::tolower);
-      gActiveFilenameFilters.push_back(gFilenameFilters[id]);
-    }
-    else
-    {
-      for (std::vector<std::string>::iterator it = gActiveFilenameFilters.begin(); it != gActiveFilenameFilters.end(); ++it)
+      if (*it == gFilenameFilters[id])
       {
-        if (*it == gFilenameFilters[id])
-        {
-          gActiveFilenameFilters.erase(it);
-          break;
-        }
+        gActiveFilenameFilters.erase(it);
+        break;
       }
     }
   }
@@ -429,7 +427,7 @@ UIFrame* UITexturingGUI::createTexturePalette(UIMapViewGUI *setgui)
   windowTexturePalette->addChild(new UIButton(145.0f, windowTexturePalette->height() - 28.0f, 132.0f, 32.0f, "Load Tilesets", "Interface\\Buttons\\UI-DialogBox-Button-Up.blp", "Interface\\Buttons\\UI-DialogBox-Button-Down.blp", showTextureLoader, 0));
   windowTexturePalette->addChild(new UIButton(283.0f, windowTexturePalette->height() - 28.0f, 132.0f, 32.0f, "Filter Textures", "Interface\\Buttons\\UI-DialogBox-Button-Up.blp", "Interface\\Buttons\\UI-DialogBox-Button-Down.blp", showTextureFilter, 0));
 
-  std::string lTexture = UITexturingGUI::selectedTexture ? selectedTexture->filename() : "tileset\\generic\\black.blp";
+  std::string lTexture = UITexturingGUI::selectedTexture ? selectedTexture.get()->filename() : "tileset\\generic\\black.blp";
 
   textureSelected = new UITexture(18.0f + pal_rows*68.0f, 32.0f, 336.0f, 336.0f, lTexture);
   windowTexturePalette->addChild(textureSelected);
@@ -440,23 +438,6 @@ UIFrame* UITexturingGUI::createTexturePalette(UIMapViewGUI *setgui)
   windowTexturePalette->addChild(textSelectedTexture);
 
   return windowTexturePalette;
-}
-
-UIFrame* UITexturingGUI::createSelectedTexture()
-{
-  /*
-  windowSelectedTexture = new UICloseWindow( video.xres() - 148.0f - 128.0f, video.yres() - 320.0f, 274.0f, 288.0f, "Current Texture", true );
-
-  std::string lTexture = UITexturingGUI::selectedTexture ? selectedTexture->filename() : "tileset\\generic\\black.blp";
-
-  windowSelectedTexture->addChild( textureSelected );
-
-
-  windowSelectedTexture->addChild( textSelectedTexture );
-
-  return windowSelectedTexture;
-  */
-  return nullptr;
 }
 
 UIFrame* UITexturingGUI::createTilesetLoader()
@@ -517,12 +498,21 @@ UIFrame* UITexturingGUI::createTextureFilter()
 
   for (std::map<int, std::string>::iterator it = gFilenameFilters.begin(); it != gFilenameFilters.end(); ++it)
   {
-    windowTextureFilter->addChild(new UICheckBox(15.0f + 200.0f * (it->first / 8), 30.0f + 30.0f * (it->first % 8), it->second, clickFileFilterTexture, it->first));
+    auto const id (it->first);
+    windowTextureFilter->addChild(new UICheckBox(15.0f + 200.0f * (it->first / 8), 30.0f + 30.0f * (it->first % 8), it->second, [id] (bool v) { clickFileFilterTexture (v, id); }));
   }
 
-  windowTextureFilter->addChild(new UICheckBox(15.0f + 200.0f * 5, 30.0f + 30.0f * 3, "Misc (Everything Else)", clickFileFilterTexture, 24));
-  UICheckBox *specTogggle = new UICheckBox(15.0f + 200.0f * 5, 30.0f + 30.0f * 4, "Only specular textures (_s)", clickFileFilterTexture, 999);
-  specTogggle->setState(true);
+  UICheckBox *specTogggle ( new UICheckBox ( 15.0f + 200.0f * 5
+                                           , 30.0f + 30.0f * 4
+                                           , "Only specular textures (_s)"
+                                           , [] (bool v)
+                                             {
+                                               showOnlySpecularTextures = v;
+                                               updateTextures();
+                                             }
+                                           )
+                          );
+  specTogggle->setState(showOnlySpecularTextures);
   windowTextureFilter->addChild(specTogggle);
 
 
@@ -540,7 +530,7 @@ UIFrame* UITexturingGUI::createTextureFilter()
     misc::find_and_replace(name, "expansion05\\", "");
     misc::find_and_replace(name, "expansion06\\", "");
     misc::find_and_replace(name, "expansion07\\", "");
-    windowTextureFilter->addChild(new UICheckBox(15.0f + 200.0f * (i / 20), 300.0f + 30.0f * (i % 20), name, clickFilterTexture, i));
+    windowTextureFilter->addChild(new UICheckBox(15.0f + 200.0f * (i / 20), 300.0f + 30.0f * (i % 20), name, [i] (bool v) { clickFilterTexture (v, i); }));
   }
 
   return windowTextureFilter;
@@ -630,9 +620,7 @@ void UITexturingGUI::setChunkWindow(MapChunk *chunk)
 {
   std::stringstream Temp;
   Temp << "Chunk " << chunk->px << ", " << chunk->py << " at (" << chunk->xbase << ", " << chunk->ybase << ", " << chunk->zbase << ")";
-  chunkLocation->setText(Temp.str().c_str());///
-
-
+  chunkLocation->setText(Temp.str().c_str());
 
   std::string areaName;
   try
@@ -669,19 +657,13 @@ void UITexturingGUI::setChunkWindow(MapChunk *chunk)
 
   std::stringstream ss;
   ss << "Num Effects: " << chunk->header.nEffectDoodad;
-  chunkNumEffects->setText(ss.str().c_str());///
+  chunkNumEffects->setText(ss.str().c_str());
 }
 
-OpenGL::Texture* UITexturingGUI::getSelectedTexture(){
+boost::optional<scoped_blp_texture_reference> UITexturingGUI::getSelectedTexture(){
   return UITexturingGUI::selectedTexture;
 }
 
-void UITexturingGUI::setSelectedTexture(OpenGL::Texture * t){
-  if (UITexturingGUI::selectedTexture)
-  {
-    UITexturingGUI::selectedTexture->removeReference();
-  }
-  t->addReference();
-
+void UITexturingGUI::setSelectedTexture(scoped_blp_texture_reference t){
   UITexturingGUI::selectedTexture = t;
 }

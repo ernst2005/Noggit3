@@ -46,7 +46,7 @@ Menu::Menu()
 {
   gWorld = nullptr;
 
-  mGUIFrame = new UIFrame(0.0f, 0.0f, (float)video.xres(), (float)video.yres());
+  mGUIFrame = std::make_unique<UIFrame> (0.0f, 0.0f, (float)video.xres(), (float)video.yres());
   mGUIMinimapWindow = new UIMinimapWindow(this);
   mGUIMinimapWindow->hide();
   mGUIFrame->addChild(mGUIMinimapWindow);
@@ -102,9 +102,6 @@ std::string buildModelPath(size_t index)
 
 Menu::~Menu()
 {
-  delete mGUIFrame;
-  mGUIFrame = nullptr;
-
   delete gWorld;
   gWorld = nullptr;
 }
@@ -162,7 +159,8 @@ void Menu::tick(float t, float /*dt*/)
 void Menu::display(float /*t*/, float /*dt*/)
 {
   // 3D: Background.
-  video.clearScreen();
+  gl.clearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  gl.clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   video.set3D();
 
@@ -176,7 +174,7 @@ void Menu::display(float /*t*/, float /*dt*/)
   gl.enable(GL_COLOR_MATERIAL);
   gl.colorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
   gl.color4f(1.0f, 1.0f, 1.0f, 1.0f);
-  for (OpenGL::Light light = GL_LIGHT0; light < GL_LIGHT0 + 8; ++light)
+  for (opengl::light light = GL_LIGHT0; light < GL_LIGHT0 + 8; ++light)
   {
     gl.lightf(light, GL_CONSTANT_ATTENUATION, 0.0f);
     gl.lightf(light, GL_LINEAR_ATTENUATION, 0.7f);
@@ -190,7 +188,7 @@ void Menu::display(float /*t*/, float /*dt*/)
   gl.enable(GL_LIGHTING);
   opengl::texture::enable_texture();
 
-  mBackgroundModel.get()->cam.setup(globalTime);
+  mBackgroundModel.get()->cam->setup(globalTime);
   mBackgroundModel.get()->draw();
 
   opengl::texture::disable_texture();
@@ -216,8 +214,14 @@ void Menu::mouseReleaseEvent (SDL_MouseButtonEvent* e)
     return;
   }
 
-  LastClickedMenu = mGUIFrame->processLeftClick (e->x, e->y);
+  if (LastClickedMenu)
+  {
+    LastClickedMenu->processUnclick();
+  }
+
+  LastClickedMenu = nullptr;
 }
+
 void Menu::mousePressEvent (SDL_MouseButtonEvent* e)
 {
   if (e->button != SDL_BUTTON_LEFT)
@@ -225,12 +229,7 @@ void Menu::mousePressEvent (SDL_MouseButtonEvent* e)
     return;
   }
 
-  if (LastClickedMenu)
-  {
-    LastClickedMenu->processUnclick();
-  }
-
-  LastClickedMenu = nullptr;
+  LastClickedMenu = mGUIFrame->processLeftClick(e->x, e->y);
 }
 
 void Menu::mousemove(SDL_MouseMotionEvent *e)

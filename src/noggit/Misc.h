@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <math/trig.hpp>
 #include <math/vector_3d.hpp>
 #include <noggit/Log.h>
 
@@ -11,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 // namespace for static helper functions.
 
@@ -26,8 +28,12 @@ namespace misc
   std::string explode(std::string original, std::string exploder = ".");
   std::string floatToStr(float f, int precision = 2);
   float dist(float x1, float z1, float x2, float z2);
+  float dist(math::vector_3d const& p1, math::vector_3d const& p2);
   float getShortestDist(float x, float z, float squareX, float squareZ, float unitSize);
+  float getShortestDist(math::vector_3d const& pos, math::vector_3d const& square_pos, float unitSize);
   bool rectOverlap(math::vector_3d *r1, math::vector_3d *r2);
+  // used for angled tools, get the height a point (pos) should be given an origin, angle and orientation
+  float angledHeight(math::vector_3d const& origin, math::vector_3d const& pos, math::radians const& angle, math::radians const& orientation);
 }
 
 //! \todo collect all lose functions/classes/structs for now, sort them later
@@ -35,92 +41,39 @@ namespace misc
 class sExtendableArray
 {
 public:
-  int mSize;
-  char* mData;
+  std::vector<char> data;
 
-  bool Allocate(int pSize)
-  {
-    mSize = pSize;
-    mData = static_cast<char*>(realloc(mData, mSize));
-    memset(mData, 0, mSize);
-    return(mData != nullptr);
+	void Allocate(int pSize)
+	{
+    data.resize (pSize);
+	}
+
+	void Extend(int pAddition)
+	{
+    data.resize (data.size() + pAddition);
+	}
+
+  void Insert(int pPosition, int pAddition)
+	{
+    std::vector<char> tmp (pAddition);
+    data.insert (data.begin() + pPosition, tmp.begin(), tmp.end());
   }
 
-  bool Extend(int pAddition)
-  {
-    mSize = mSize + pAddition;
-    mData = static_cast<char*>(realloc(mData, mSize));
-    if (pAddition > 0)
-      memset(mData + mSize - pAddition, 0, pAddition);
-    return(mData != nullptr);
-  }
+	void Insert(int pPosition, int pAddition, const char * pAdditionalData)
+	{
+    data.insert (data.begin() + pPosition, pAdditionalData, pAdditionalData + pAddition);
+	}
 
-  bool Insert(int pPosition, int pAddition)
-  {
-    const int lPostSize = mSize - pPosition;
+	template<typename To>
+	To * GetPointer(unsigned int pPosition = 0)
+	{
+		return(reinterpret_cast<To*>(data.data() + pPosition));
+	}
 
-    char *lPost = static_cast<char*>(malloc(lPostSize));
-    memcpy(lPost, mData + pPosition, lPostSize);
-
-    if (!Extend(pAddition))
-      return false;
-
-    memcpy(mData + pPosition + pAddition, lPost, lPostSize);
-    memset(mData + pPosition, 0, pAddition);
-
-    free(lPost);
-
-    return true;
-  }
-
-  bool Insert(int pPosition, int pAddition, const char * pAdditionalData)
-  {
-    const int lPostSize = mSize - pPosition;
-
-    char *lPost = static_cast<char*>(malloc(lPostSize));
-    memcpy(lPost, mData + pPosition, lPostSize);
-
-    if (!Extend(pAddition))
-      return false;
-
-    memcpy(mData + pPosition + pAddition, lPost, lPostSize);
-    memcpy(mData + pPosition, pAdditionalData, pAddition);
-
-    free(lPost);
-
-    return true;
-  }
-
-  template<typename To>
-  To * GetPointer()
-  {
-    return(reinterpret_cast<To*>(mData));
-  }
-
-  template<typename To>
-  To * GetPointer(unsigned int pPosition)
-  {
-    return(reinterpret_cast<To*>(mData + pPosition));
-  }
-
-  sExtendableArray()
-  {
-    mSize = 0;
-    mData = nullptr;
-  }
-
-  sExtendableArray(int pSize, const char *pData)
-  {
-    if (Allocate(pSize))
-      memcpy(mData, pData, pSize);
-    else
-      LogError << "Allocating " << pSize << " bytes failed. This may crash soon." << std::endl;
-  }
-
-  void Destroy()
-  {
-    free(mData);
-  }
+  sExtendableArray() = default;
+	sExtendableArray(int pSize, const char *pData)
+    : data (pData, pData + pSize)
+	{}
 };
 
 struct sChunkHeader
@@ -135,7 +88,7 @@ struct filenameOffsetThing
   int filenamePosition;
 };
 
-void SetChunkHeader(sExtendableArray pArray, int pPosition, int pMagix, int pSize = 0);
+void SetChunkHeader(sExtendableArray& pArray, int pPosition, int pMagix, int pSize = 0);
 
 bool pointInside(math::vector_3d point, math::vector_3d extents[2]);
 void minmax(math::vector_3d* a, math::vector_3d* b);

@@ -14,11 +14,13 @@ char* gpszProgramName = "Noggit3";
 static LOGCONTEXT  glogContext = { 0 };
 #endif
 
+#include <noggit/Native.hpp>
+
 #include <noggit/AppState.h>
 #include <noggit/AsyncLoader.h>
 #include <noggit/ConfigFile.h>
 #include <noggit/Environment.h>  // This singleton holds all vars you dont must save. Like bools for display options. We should move all global stuff here to get it OOP!
-#include <noggit/Liquid.h>
+#include <noggit/liquid_layer.hpp>
 #include <noggit/Log.h>
 #include <noggit/MPQ.h>
 #include <noggit/MapView.h>
@@ -31,6 +33,7 @@ static LOGCONTEXT  glogContext = { 0 };
 #include <noggit/Video.h>
 #include <noggit/WMO.h> // WMOManager::report()
 #include <noggit/errorHandling.h>
+#include <opengl/context.hpp>
 
 #include <boost/filesystem.hpp>
 #include <boost/thread/thread.hpp>
@@ -49,7 +52,6 @@ static LOGCONTEXT  glogContext = { 0 };
 
 Noggit app;
 void CreateStrips();
-extern std::list<std::string> gListfile;
 
 Noggit::Noggit()
   : fullscreen(false)
@@ -57,11 +59,6 @@ Noggit::Noggit()
   , xres(1280)
   , yres(720)
 {}
-
-Noggit::~Noggit()
-{
-
-}
 
 void Noggit::initPath(char *argv[])
 {
@@ -87,15 +84,8 @@ void Noggit::initPath(char *argv[])
 
 void Noggit::initFont()
 {
+  std::string arialFilename = Native::getArialPath();
 
-  std::string arialFilename("<PLEASE GET SOME FONT FOR YOUR OS>");
-#ifdef _WIN32
-  //! \todo This might not work on windows 7 or something. Please fix.
-  arialFilename = "C:\\windows\\fonts\\arial.ttf";
-#endif
-#ifdef __APPLE__
-  arialFilename = "/Library/Fonts/Arial.ttf";
-#endif
   if (!boost::filesystem::exists(arialFilename))
   {
     arialFilename = "arial.ttf";
@@ -131,7 +121,7 @@ void Noggit::initEnv()
   SDL_SysWMinfo SysInfo;
   SDL_GetWMInfo(&SysInfo);
   WindowHandle = SysInfo.window;
-  hInst = (HINSTANCE)GetWindowLong(WindowHandle, GWL_HINSTANCE);
+  hInst = (HINSTANCE)GetWindowLongPtr(WindowHandle, GWLP_HINSTANCE);
   hCtx = nullptr;
   tabletActive = FALSE;
 
@@ -265,28 +255,7 @@ boost::filesystem::path Noggit::getGamePath()
       LogError << "You must rename noggit_template.conf to noggit.conf if noggit should use the config file!" << std::endl;
     }
 
-
-#ifdef _WIN32
-    Log << "Will try to load the game path from you registry now:" << std::endl;
-    HKEY key;
-    DWORD t;
-    const DWORD s(1024);
-    char temp[s];
-    memset(temp, 0, s);
-    LONG l = RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\Wow6432Node\\Blizzard Entertainment\\World of Warcraft", 0, KEY_QUERY_VALUE, &key);
-    if (l != ERROR_SUCCESS)
-      l = RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\Blizzard Entertainment\\World of Warcraft\\PTR", 0, KEY_QUERY_VALUE, &key);
-    if (l != ERROR_SUCCESS)
-      l = RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\Blizzard Entertainment\\World of Warcraft", 0, KEY_QUERY_VALUE, &key);
-    if (l == ERROR_SUCCESS && RegQueryValueEx(key, "InstallPath", 0, &t, (LPBYTE)temp, (LPDWORD)&s) == ERROR_SUCCESS)
-      return temp;
-    else
-      return "";
-    RegCloseKey(key);
-#else
-    return "/Applications/World of Warcraft/";
-#endif
-
+	return Native::getGamePath();
   }
   else
   {
@@ -386,7 +355,7 @@ void Noggit::loadMPQs()
   }
 }
 
-void Noggit::mainLoop()
+void Noggit::mainLoop (SDL_Surface* primary)
 {
   uint32_t timeA, timeB, diff;
   bool done(false);
@@ -420,7 +389,7 @@ void Noggit::mainLoop()
       const float ftickDelta(tickDelta / 1000.0f);
       activeAppState->tick(ftime, ftickDelta);
       activeAppState->display(ftime, ftickDelta);
-      video.flip();
+      SDL_GL_SwapBuffers();
     }
     else
     {
@@ -439,7 +408,8 @@ void Noggit::mainLoop()
       }
       else if (event.type == SDL_VIDEORESIZE)
       {
-        video.resize(event.resize.w, event.resize.h);
+        primary = SDL_SetVideoMode (event.resize.w, event.resize.h, 0, primary->flags);
+        video.resize (event.resize.w, event.resize.h);
         activeAppState->resizewindow();
       }
       else if (hasInputFocus)
@@ -506,7 +476,19 @@ int Noggit::start(int argc, char *argv[])
   wowpath = getGamePath();
 
   if (wowpath == "")
+  {
+    LogError << "Empty wow path" << std::endl;
     return -1;
+  }
+
+  boost::filesystem::path data_path = wowpath / "Data";
+
+  if (!boost::filesystem::exists(data_path))
+  {
+    LogError << "Could not find data directory: " << data_path << std::endl;
+    return -1;
+  }
+    
   Log << "Game path: " << wowpath << std::endl;
 
   if (Project::getInstance()->getPath() == "")
@@ -517,27 +499,79 @@ int Noggit::start(int argc, char *argv[])
   loadMPQs(); // listfiles are not available straight away! They are async! Do not rely on anything at this point!
   OpenDBs();
 
-  if (!video.init(xres, yres, fullscreen, doAntiAliasing))
+  if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_VIDEO))
   {
-    LogError << "Initializing video failed." << std::endl;
+    LogError << "SDL: " << SDL_GetError() << std::endl;
+    return -2;
+  }
+
+  int flags = SDL_OPENGL | SDL_HWSURFACE | SDL_ANYFORMAT | SDL_DOUBLEBUF | SDL_RESIZABLE;
+  if (fullscreen)
+  {
+    flags |= SDL_FULLSCREEN;
+  }
+
+  SDL_GL_SetAttribute (SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute (SDL_GL_STENCIL_SIZE, 1);
+  SDL_GL_SetAttribute (SDL_GL_DEPTH_SIZE, 24);
+  SDL_GL_SetAttribute (SDL_GL_RED_SIZE, 8);
+  SDL_GL_SetAttribute (SDL_GL_GREEN_SIZE, 8);
+  SDL_GL_SetAttribute (SDL_GL_BLUE_SIZE, 8);
+  SDL_GL_SetAttribute (SDL_GL_ALPHA_SIZE, 8);
+  if (doAntiAliasing)
+  {
+    SDL_GL_SetAttribute (SDL_GL_MULTISAMPLEBUFFERS, 1);
+    //! \todo Make sample count configurable.
+    SDL_GL_SetAttribute (SDL_GL_MULTISAMPLESAMPLES, 4);
+  }
+
+  SDL_Surface* primary (SDL_SetVideoMode (xres, yres, 0, flags));
+
+  if (!primary)
+  {
+    LogError << "SDL: " << SDL_GetError() << std::endl;
+    return -2;
+  }
+
+  GLenum err = glewInit();
+  if (GLEW_OK != err)
+  {
+    LogError << "GLEW: " << glewGetErrorString(err) << std::endl;
+    return -3;
+  }
+
+  gl.enableClientState (GL_VERTEX_ARRAY);
+  gl.enableClientState (GL_NORMAL_ARRAY);
+  gl.enableClientState (GL_TEXTURE_COORD_ARRAY);
+
+  LogDebug << "GL: Version: " << gl.getString(GL_VERSION) << std::endl;
+  LogDebug << "GL: Vendor: " << gl.getString(GL_VENDOR) << std::endl;
+  LogDebug << "GL: Renderer: " << gl.getString(GL_RENDERER) << std::endl;
+
+  if (doAntiAliasing)
+  {
+    gl.enable(GL_MULTISAMPLE);
+  }
+
+  video.init(xres, yres);
+
+  if (!GLEW_ARB_texture_compression)
+  {
+    LogError << "You GPU does not support ARB texture compression. Initializing video failed." << std::endl;
     return -1;
   }
 
   SDL_WM_SetCaption("Noggit Studio - " STRPRODUCTVER, "");
   initFont();
 
-  if (video.mSupportShaders)
-    loadWaterShader();
-  else
-    LogError << "Your GPU does not support ARB vertex programs (shaders). Sorry." << std::endl;
-
   LogDebug << "Creating Menu" << std::endl;
   states.push_back(new Menu());
 
   LogDebug << "Entering Main Loop" << std::endl;
-  mainLoop();
+  mainLoop (primary);
 
-  video.close();
+  SDL_FreeSurface(primary);
+  SDL_Quit();
 
   TextureManager::report();
   ModelManager::report();
@@ -568,35 +602,7 @@ int main(int argc, char *argv[])
   return app.start(argc, argv);
 }
 
-//! \todo  Get this out?
-//gFileList = new Directory( "root" );
-//size_t found;
-// This is an example with filter:
-/*
-std::vector<std::string>::iterator it;
-for( it = gListfile.begin(); it != gListfile.end(); ++it )
-{
-if( it->find( pFilter ) != std::string::npos )
-{
-found = it->find_last_of("/\\");
-if( found != std::string::npos )
-mDirectory->AddSubDirectory( it->substr(0,found) )->AddFile( it->substr(found+1) );
-else
-mDirectory->AddFile( *it );
-}
-}
-*/
-// This is an example for getting all files in the list.
-/*  std::list<std::string>::iterator it;
-for( it = gListfile.begin(); it != gListfile.end(); ++it )
-{
-found = it->find_last_of("/\\");
-if( found != std::string::npos )
-gFileList->AddSubDirectory( it->substr(0,found) )->AddFile( it->substr(found+1) );
-else
-gFileList->AddFile( *it );
-}
-*/
+
 #ifdef _WIN32
 HCTX static NEAR TabletInit(HWND hWnd)
 {

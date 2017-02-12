@@ -7,6 +7,9 @@
 #include <noggit/Misc.h>
 #include <noggit/Project.h>
 #include <noggit/World.h>
+#ifdef USE_MYSQL_UID_STORAGE
+  #include <mysql/mysql.h>
+#endif
 #include <noggit/map_index.hpp>
 #include <noggit/uid_storage.hpp>
 
@@ -23,6 +26,7 @@ MapIndex::MapIndex(const std::string &pBasename)
   , cx(-1)
   , cz(-1)
   , highestGUID(0)
+  , highestGUIDDB(0)
 {
 
   std::stringstream filename;
@@ -126,14 +130,20 @@ MapIndex::MapIndex(const std::string &pBasename)
   theFile.close();
 }
 
-MapIndex::~MapIndex()
+void MapIndex::saveall()
 {
   for (MapTile* tile : loaded_tiles())
   {
-    delete tile;
-    tile = nullptr;
+    tile->saveTile();
+    tile->changed = 0;
   }
 }
+
+void MapIndex::savecurrent()
+{
+  gWorld->mapIndex->saveTile(tile_index(gWorld->camera));
+}
+
 
 void MapIndex::save()
 {
@@ -207,7 +217,7 @@ void MapIndex::save()
   }
 
   MPQFile f(filename.str());
-  f.setBuffer(wdtFile.GetPointer<char>(), wdtFile.mSize);
+  f.setBuffer(wdtFile.data);
   f.SaveFile();
   f.close();
 
@@ -230,7 +240,7 @@ void MapIndex::enterTile(const tile_index& tile)
   {
     for (int px = std::max(cx - 1, 0); px < std::min(cx + 2, 63); ++px)
     {
-      mTiles[pz][px].tile = loadTile(tile_index(px, pz));
+      loadTile(tile_index(px, pz));
     }
   }
 
@@ -242,11 +252,6 @@ void MapIndex::enterTile(const tile_index& tile)
 
     autoheight = false;
   }
-}
-
-void MapIndex::setChanged(float x, float z)
-{
-  setChanged(tile_index(math::vector_3d(x, 0.0f, z)));
 }
 
 void MapIndex::setChanged(const tile_index& tile)
@@ -286,33 +291,18 @@ int MapIndex::getChanged(const tile_index& tile)
     return 0;
 }
 
-void MapIndex::setFlag(bool to, float x, float z)
+void MapIndex::setFlag(bool to, math::vector_3d const& pos)
 {
-  tile_index tile(math::vector_3d(x, 0.0f, z));
+  tile_index tile(pos);
 
   if (tileLoaded(tile))
   {
     setChanged(tile);
 
-    int cx = (x - tile.x * TILESIZE) / CHUNKSIZE;
-    int cz = (z - tile.z * TILESIZE) / CHUNKSIZE;
+    int cx = (pos.x - tile.x * TILESIZE) / CHUNKSIZE;
+    int cz = (pos.z - tile.z * TILESIZE) / CHUNKSIZE;
 
     getTile(tile)->getChunk(cx, cz)->setFlag(to);
-  }
-}
-
-void MapIndex::setWater(bool to, float x, float z)
-{
-  tile_index tile(math::vector_3d(x, 0.0f, z));
-
-  if (tileLoaded(tile))
-  {
-    setChanged(tile);
-
-    int cx = (x - tile.x * TILESIZE) / CHUNKSIZE;
-    int cz = (z - tile.z * TILESIZE) / CHUNKSIZE;
-
-    getTile(tile)->getChunk(cx, cz)->SetWater(to);
   }
 }
 
@@ -325,7 +315,7 @@ MapTile* MapIndex::loadTile(const tile_index& tile)
 
   if (tileLoaded(tile))
   {
-    return mTiles[tile.z][tile.x].tile;
+    return mTiles[tile.z][tile.x].tile.get();
   }
 
   std::stringstream filename;
@@ -337,22 +327,21 @@ MapTile* MapIndex::loadTile(const tile_index& tile)
     return nullptr;
   }
 
-  mTiles[tile.z][tile.x].tile = new MapTile(tile.x, tile.z, filename.str(), mBigAlpha);
+  mTiles[tile.z][tile.x].tile = std::make_unique<MapTile> (tile.x, tile.z, filename.str(), mBigAlpha);
 
-  return mTiles[tile.z][tile.x].tile;
+  return mTiles[tile.z][tile.x].tile.get();
 }
 
 void MapIndex::reloadTile(const tile_index& tile)
 {
   if (tileLoaded(tile))
   {
-    delete mTiles[tile.z][tile.x].tile;
     mTiles[tile.z][tile.x].tile = nullptr;
 
     std::stringstream filename;
     filename << "World\\Maps\\" << basename << "\\" << basename << "_" << tile.x << "_" << tile.z << ".adt";
 
-    mTiles[tile.z][tile.x].tile = new MapTile(tile.x, tile.z, filename.str(), mBigAlpha);
+    mTiles[tile.z][tile.x].tile = std::make_unique<MapTile> (tile.x, tile.z, filename.str(), mBigAlpha);
     enterTile(tile_index(cx, cz));
   }
 }
@@ -387,7 +376,6 @@ void MapIndex::unloadTile(const tile_index& tile)
   // unloads a tile with givn cords
   if (tileLoaded(tile))
   {
-    delete mTiles[tile.z][tile.x].tile;
     mTiles[tile.z][tile.x].tile = nullptr;
     Log << "Unload Tile " << tile.x << "-" << tile.z << "\n";
   }
@@ -469,7 +457,7 @@ void MapIndex::setAdt(bool value)
 
 MapTile* MapIndex::getTile(const tile_index& tile) const
 {
-  return mTiles[tile.z][tile.x].tile;
+  return mTiles[tile.z][tile.x].tile.get();
 }
 
 MapTile* MapIndex::getTileAbove(MapTile* tile) const
@@ -479,7 +467,7 @@ MapTile* MapIndex::getTileAbove(MapTile* tile) const
     return nullptr;
   }
 
-  return mTiles[tile->index.z - 1][tile->index.x].tile;
+  return mTiles[tile->index.z - 1][tile->index.x].tile.get();
 }
 
 MapTile* MapIndex::getTileLeft(MapTile* tile) const
@@ -489,7 +477,7 @@ MapTile* MapIndex::getTileLeft(MapTile* tile) const
     return nullptr;
   }
 
-  return mTiles[tile->index.z][tile->index.x - 1].tile;
+  return mTiles[tile->index.z][tile->index.x - 1].tile.get();
 }
 
 uint32_t MapIndex::getFlag(const tile_index& tile) const
@@ -497,16 +485,23 @@ uint32_t MapIndex::getFlag(const tile_index& tile) const
   return mTiles[tile.z][tile.x].flags;
 }
 
-void MapIndex::setBigAlpha()
+void MapIndex::convert_alphamap(bool to_big_alpha)
 {
-  mBigAlpha = true;
-  mphd.flags |= 4;
+  mBigAlpha = to_big_alpha;
+  if (to_big_alpha)
+  {
+    mphd.flags |= 4;
+  }
+  else
+  {
+    mphd.flags &= 0xFFFFFFFB;
+  }
 }
 
 
 uint32_t MapIndex::getHighestGUIDFromFile(const std::string& pFilename) const
 {
-    uint32_t highGUID = 0;
+	uint32_t highGUID = 0;
 
     MPQFile theFile(pFilename);
     if (theFile.isEof())
@@ -570,11 +565,36 @@ uint32_t MapIndex::getHighestGUIDFromFile(const std::string& pFilename) const
     return highGUID;
 }
 
-uint32_t MapIndex::newGUID()
+#ifdef USE_MYSQL_UID_STORAGE
+uint32_t MapIndex::getHighestGUIDFromDB() const
 {
-  return ++highestGUID;
+	return mysql::getGUIDFromDB (*Settings::getInstance()->mysql, gWorld->mMapId);
 }
 
+uint32_t MapIndex::newGUIDDB()
+{
+  highestGUIDDB = std::max(highestGUIDDB, getHighestGUIDFromDB());
+  highGUIDDB = std::max(highestGUID, highestGUIDDB);
+  highGUIDDB = ++highestGUIDDB;
+  highestGUID = highGUIDDB; // update local max uid too
+  mysql::updateUIDinDB(*Settings::getInstance()->mysql, gWorld->mMapId, highGUIDDB);  // it's neccesary to update the uid in database after every place, other then in the file uid storage system, because of cloudworking
+  return highGUIDDB;
+}
+#endif
+
+uint32_t MapIndex::newGUID()
+{
+#ifdef USE_MYSQL_UID_STORAGE
+  if (Settings::getInstance()->mysql) {
+    return newGUIDDB();
+  }
+  else {
+  return ++highestGUID;
+  }
+#else
+  return ++highestGUID;
+#endif
+}
 
 inline bool floatEqual(float& a, float& b)
 {
@@ -587,7 +607,7 @@ void MapIndex::fixUIDs()
 
   std::forward_list<ModelInstance> models;
   std::forward_list<WMOInstance> wmos;
-  
+
   for (int z = 0; z < 64; ++z)
   {
     for (int x = 0; x < 64; ++x)
@@ -772,13 +792,13 @@ void MapIndex::fixUIDs()
   for (ModelInstance& instance : models)
   {
     instance.d1 = uid++;
-    
+
     // to avoid going outside of bound
     std::size_t sx = std::max((std::size_t)(instance.extents[0].x / TILESIZE), (std::size_t)0);
     std::size_t sz = std::max((std::size_t)(instance.extents[0].z / TILESIZE), (std::size_t)0);
     std::size_t ex = std::min((std::size_t)(instance.extents[1].x / TILESIZE), (std::size_t)63);
     std::size_t ez = std::min((std::size_t)(instance.extents[1].z / TILESIZE), (std::size_t)63);
-    
+
 
     for (std::size_t z = sz; z <= ez; ++z)
     {
@@ -811,7 +831,7 @@ void MapIndex::fixUIDs()
   // save the current highest guid
   highestGUID = uid - 1;
 
-  // load each tile without the models and 
+  // load each tile without the models and
   // save them with the models from modelPerTile / wmoPerTile
   for (int z = 0; z < 64; ++z)
   {
@@ -822,7 +842,7 @@ void MapIndex::fixUIDs()
         continue;
       }
 
-      // load even the tiles without models in case there are old ones 
+      // load even the tiles without models in case there are old ones
       // that shouldn't be there to avoid creating new duplicates
 
       std::stringstream filename;
@@ -855,7 +875,7 @@ void MapIndex::fixUIDs()
       std::swap(gWorld->mWMOInstances, wmoInst);
     }
   }
-  
+
   saveMaxUID();
 }
 
@@ -880,11 +900,39 @@ void MapIndex::searchMaxUID()
 
 void MapIndex::saveMaxUID()
 {
+#ifdef USE_MYSQL_UID_STORAGE
+  if (Settings::getInstance()->mysql) {
+  if (mysql::hasMaxUIDStoredDB(*Settings::getInstance()->mysql, gWorld->mMapId))
+  {
+	  mysql::updateUIDinDB(*Settings::getInstance()->mysql, gWorld->mMapId, highestGUID);
+  }
+  else
+  {
+	  mysql::insertUIDinDB(*Settings::getInstance()->mysql, gWorld->mMapId, highestGUID);
+  }
+  }
+  else
+  {
+    // save the max UID on the disc
+    uid_storage::getInstance()->saveMaxUID(gWorld->mMapId, highestGUID);
+  }
+#else
   // save the max UID on the disc
   uid_storage::getInstance()->saveMaxUID(gWorld->mMapId, highestGUID);
+#endif
 }
 
 void MapIndex::loadMaxUID()
 {
+#ifdef USE_MYSQL_UID_STORAGE
+if (Settings::getInstance()->mysql) {
+  highestGUID = mysql::getGUIDFromDB(*Settings::getInstance()->mysql, gWorld->mMapId);
+}
+else
+{
   highestGUID = uid_storage::getInstance()->getMaxUID(gWorld->mMapId);
+}
+#else
+  highestGUID = uid_storage::getInstance()->getMaxUID(gWorld->mMapId);
+#endif
 }

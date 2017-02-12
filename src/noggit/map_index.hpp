@@ -23,7 +23,7 @@ class MapTileEntry
 {
 private:
   uint32_t flags;
-  MapTile* tile;
+  std::unique_ptr<MapTile> tile;
   bool onDisc;
 
 
@@ -127,30 +127,27 @@ public:
       ([] (tile_index const&, MapTile* tile) { return !!tile; });
   }
 
-  auto tiles_in_range (float x, float z, float radius)
+  auto tiles_in_range (math::vector_3d const& pos, float radius)
   {
     return tiles<true>
-      ( [this, x, z, radius] (tile_index const& index, MapTile*)
+      ( [this, pos, radius] (tile_index const& index, MapTile*)
         {
           return hasTile(index) && misc::getShortestDist
-            (x, z, index.x * TILESIZE, index.z * TILESIZE, TILESIZE) <= radius;
+            (pos.x, pos.z, index.x * TILESIZE, index.z * TILESIZE, TILESIZE) <= radius;
         }
       );
   }
 
   MapIndex(const std::string& pBasename);
-  ~MapIndex();
 
   void enterTile(const tile_index& tile);
   MapTile *loadTile(const tile_index& tile);
 
-  void setChanged(float x, float z);
   void setChanged(const tile_index& tile);
   void setChanged(MapTile* tile);
 
   void unsetChanged(const tile_index& tile);
-  void setFlag(bool to, float x, float z);
-  void setWater(bool to, float x, float z);
+  void setFlag(bool to, math::vector_3d const& pos);
   int getChanged(const tile_index& tile);
 
   void saveTile(const tile_index& tile);
@@ -169,24 +166,31 @@ public:
   void setAdt(bool value);
 
   void save();
+  void saveall();
+  void savecurrent();
 
   MapTile* getTile(const tile_index& tile) const;
   MapTile* getTileAbove(MapTile* tile) const;
   MapTile* getTileLeft(MapTile* tile) const;
   uint32_t getFlag(const tile_index& tile) const;
 
-  void setBigAlpha();
+  void convert_alphamap(bool to_big_alpha);
   bool hasBigAlpha() const { return mBigAlpha; }
 
   uint32_t newGUID();
+
   void fixUIDs();
   void searchMaxUID();
   void saveMaxUID();
   void loadMaxUID();
 
 private:
-  uint32_t getHighestGUIDFromFile(const std::string& pFilename) const;
-  
+	uint32_t getHighestGUIDFromFile(const std::string& pFilename) const;
+#ifdef USE_MYSQL_UID_STORAGE
+  uint32_t getHighestGUIDFromDB() const;
+  uint32_t newGUIDDB();
+#endif
+
   bool hasTile(int tileX, int tileZ) const;
   bool tileLoaded(int tileX, int tileZ) const;
 
@@ -207,6 +211,9 @@ private:
   int cz;
 
   uint32_t highestGUID;
+  uint32_t highestGUIDDB;
+  uint32_t highGUID;
+  uint32_t highGUIDDB;
 
   ENTRY_MODF wmoEntry;
   MPHD mphd;

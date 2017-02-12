@@ -7,10 +7,6 @@ Environment::Environment()
   : view_holelines(false)
   , flagPaintMode(FLAG_IMPASS)
   , paintMode(true)
-  , highlightPaintableChunks(true)
-  , flattenAngle(45.0f)
-  , flattenOrientation(0.0f)
-  , flattenAngleEnabled(false)
   , minRotation(0.0f)
   , maxRotation(360.0f)
   , minTilt(-5.0f)
@@ -52,9 +48,4 @@ void Environment::clear_clipboard()
 bool Environment::is_clipboard()
 {
   return !!clipboard;
-}
-
-math::vector_3d Environment::get_cursor_pos()
-{
-  return math::vector_3d(Pos3DX, Pos3DY, Pos3DZ);
 }

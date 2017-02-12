@@ -59,8 +59,6 @@ void main()
       static std::array<unsigned char, 16> const indices
         {5, 7, 3, 2, 0, 1, 3, 1, 5, 4, 0, 4, 6, 2, 6, 7};
 
-      gl.genBuffers (sizeof (_buffers) / sizeof (*_buffers), _buffers);
-
       {
         scoped::buffer_binder<GL_ARRAY_BUFFER> const buffer (_positions);
         gl.bufferData ( GL_ARRAY_BUFFER
@@ -84,7 +82,7 @@ void main()
     {
       opengl::scoped::use_program wire_box_shader {_program};
 
-      gl.enable (GL_LINE_SMOOTH);
+      opengl::scoped::bool_setter<GL_LINE_SMOOTH, GL_TRUE> const line_smooth;
       gl.hint (GL_LINE_SMOOTH_HINT, GL_NICEST);
       gl.lineWidth (line_width);
 

@@ -12,6 +12,7 @@
 #include <noggit/ui/Button.h>
 #include <noggit/ui/CheckBox.h>
 #include <noggit/ui/Texture.h>
+#include <noggit/ui/ToggleGroup.h>
 #include <noggit/ui/Slider.h>
 #include <noggit/ui/MapViewGUI.h>
 #include <noggit/Misc.h>
@@ -27,65 +28,42 @@ UIWater::UIWater(UIMapViewGUI *setGui)
   : UIWindow((float)video.xres() / 2.0f - (float)winWidth / 2.0f, (float)video.yres() / 2.0f - (float)winHeight / 2.0f - (float)(video.yres() / 4), (float)winWidth, (float)winHeight)
   , mainGui(setGui)
   , tile(0, 0)
+  , _liquid_id(5)
+  , _radius(10.0f)
+  , _angle(10.0f)
+  , _orientation(0.0f)
+  , _locked(false)
+  , _angled_mode(false)
+  , _override_liquid_id(true)
+  , _override_height(true)
+  , _opacity_mode(river_opacity)
+  , _custom_opacity_factor(0.0337f)
+  , _lock_pos(math::vector_3d(0.0f, 0.0f, 0.0f))
 {
   addChild(new UIText(78.5f, 2.0f, "Water edit", app.getArial14(), eJustifyCenter));
 
+  _radius_slider = new UISlider(5.0f, 35.0f, 170.0f, 250.0f, 0.0f);
+  _radius_slider->setFunc([&](float f) { _radius = f;});
+  _radius_slider->setValue(_radius / 250.0f);
+  _radius_slider->setText("Radius:");
+  addChild(_radius_slider);
 
-  waterOpacity = new UISlider(5.0f, 40.0f, 169.0f, 255.0f, 0.0f);
-  waterOpacity->setValue(1);
-  waterOpacity->setText("Opacity: ");
-  waterOpacity->setFunc(boost::bind(&UIWater::setWaterTrans, this, _1));
-  addChild(waterOpacity);
-  addChild(new UIText(5.0f, 50.0f, "shift + numpad +/-", app.getArial12(), eJustifyLeft));
+  _angle_slider = new UISlider(6.0f, 65.0f, 167.0f, 89.0f, 0.00001f);
+  _angle_slider->setFunc([&](float f) { _angle = f; });
+  _angle_slider->setValue(_angle / 89.0f);
+  _angle_slider->setText("Angle: ");
+  addChild(_angle_slider);
 
-  addChild(new UIText(60.0f, 74.0f, "Level: ", app.getArial12(), eJustifyLeft));
-  waterLevel = new UIText(95.0f, 74.0f, "0.0", app.getArial12(), eJustifyLeft);
-  addChild(waterLevel);
+  _orientation_slider = new UISlider(6.0f, 95.0f, 167.0f, 360.0f, 0.00001f);
+  _orientation_slider->setFunc([&](float f) { _orientation = f; });
+  _orientation_slider->setValue(_orientation / 360.0f);
+  _orientation_slider->setText("Orientation: ");
+  addChild(_orientation_slider);
 
-  addChild(new UIButton(5.0f, 90.0f, 38.0f, 30.0f,
-    "-100",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this] { changeWaterHeight (-100.f); }
-    ));
+  addChild(_angle_checkbox = new UICheckBox(5.0f, 110.0f, "Angled water", &_angled_mode));
+  addChild(_lock_checkbox = new UICheckBox(5.0f, 135.0f, "Lock position", &_locked));
 
-  addChild(new UIButton(45.0f, 90.0f, 23.0f, 30.0f,
-    "-10",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this] { changeWaterHeight (-10.f); }
-    ));
-
-  addChild(new UIButton(70.0f, 90.0f, 19.0f, 30.0f,
-    "-1",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this] { changeWaterHeight (-1.f); }
-    ));
-
-  addChild(new UIButton(91.0f, 90.0f, 19.0f, 30.0f,
-    "+1",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this] { changeWaterHeight (1.f); }
-    ));
-
-  addChild(new UIButton(112.0f, 90.0f, 23.0f, 30.0f,
-    "+10",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this] { changeWaterHeight (10.f); }
-    ));
-
-  addChild(new UIButton(137.0f, 90.0f, 38.0f, 30.0f,
-    "+100",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this] { changeWaterHeight (100.f); }
-    ));
-  addChild(new UIText(5.0f, 108.f, "numpad +/- (alt *2, ctrl *5)", app.getArial12(), eJustifyLeft));
-
-  waterType = new UIButton(5.0f, 135.0f, 170.0f, 30.0f,
+  waterType = new UIButton(5.0f, 170.0f, 170.0f, 30.0f,
     "Type: none",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
@@ -94,65 +72,58 @@ UIWater::UIWater(UIMapViewGUI *setGui)
 
   addChild(waterType);
 
-  waterGenFactor = new UISlider(5.0f, 185.0f, 169.0f, 100.0f, 0.0f);
-  waterGenFactor->setValue(0.5f);
-  waterGenFactor->setText("Opacity Gen Factor: ");
-  addChild(waterGenFactor);
+  addChild(new UIText(5.0f, 200.0f, "Override :", app.getArial12(), eJustifyLeft));
 
-  waterGen = new UIButton(5.0f, 205.0f, 170.0f, 30.0f,
-    "Auto Opacity",
+  addChild(new UICheckBox(5.0f, 215.0f, "Liquid ID", &_override_liquid_id));
+  addChild(new UICheckBox(95.0f, 215.0f, "Height", &_override_height));
+
+  addChild(new UIText(5.0f, 245.0f, "Auto opacity:", app.getArial12(), eJustifyLeft));
+
+  UIToggleGroup *transparency_toggle = new UIToggleGroup(&_opacity_mode);
+
+  addChild(new UICheckBox(5.0f, 260.0f, "River", transparency_toggle, river_opacity));
+  addChild(new UICheckBox(95.0f, 260.0f, "Ocean", transparency_toggle, ocean_opacity));
+  addChild(new UICheckBox(5.0f, 285.0f, "", transparency_toggle, custom_opacity));
+
+  transparency_toggle->Activate(river_opacity);
+
+  UISlider *opacity_slider = new UISlider(35.0f, 300.0f, 140.0f, 10.0f, 0.0f);
+  opacity_slider->setValue(_custom_opacity_factor * 10.0f);
+  opacity_slider->setText("custom factor:");
+  opacity_slider->setFunc([&](float f) { _custom_opacity_factor = f * 0.01f; });
+  addChild(opacity_slider);
+
+  addChild(new UIButton(5.0f, 320.0f, 170.0f, 30.0f,
+    "Regen ADT opacity",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this]
-    {
-      gWorld->autoGenWaterTrans(tile, (int)waterGenFactor->value * 100);
-      updateData();
-    }
-    );
+                       [this] { gWorld->autoGenWaterTrans(gWorld->camera, get_opacity_factor()); }
+  ));
 
-  addChild(waterGen);
-
-  addWater = new UIButton(5.0f, 225.0f, 170.0f, 30.0f,
-    "Fill with water",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
-    "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
-    [this]
-    {
-      gWorld->AddWaters(tile);
-      updateData();
-    }
-    );
-  addChild(addWater);
-
-  cropWater = new UIButton(5.0f, 245.0f, 170.0f, 30.0f,
+  cropWater = new UIButton(5.0f, 350.0f, 170.0f, 30.0f,
     "Crop water",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
     [this]
     {
-      gWorld->CropWaterADT(tile);
+      gWorld->CropWaterADT(gWorld->camera);
       updateData();
     }
     );
   addChild(cropWater);
 
-  displayAllLayers = new UICheckBox(5.0f, 270.0f, "Show all layers", [] (bool b, int)
-  {
-    Environment::getInstance()->displayAllWaterLayers = b;
-  }, 0);
-  displayAllLayers->setState(Environment::getInstance()->displayAllWaterLayers);
-  addChild(displayAllLayers);
+  addChild(new UICheckBox(5.0f, 370.0f, "Show all layers", &Environment::getInstance()->displayAllWaterLayers));
 
-  UIText *txt = new UIText(5.0f, 300.0f, app.getArial12(), eJustifyLeft);
+  UIText *txt = new UIText(5.0f, 400.0f, app.getArial12(), eJustifyLeft);
   txt->setText("Current layer:");
   addChild(txt);
 
 
-  waterLayer = new UIText(90.0f, 322.0f, app.getArial12(), eJustifyCenter);
+  waterLayer = new UIText(90.0f, 422.0f, app.getArial12(), eJustifyCenter);
   waterLayer->setText(std::to_string(Environment::getInstance()->currentWaterLayer + 1));
   addChild(waterLayer);
 
-  addChild(new UIButton(28.0f, 320.0f, 50.0f, 30.0f,
+  addChild(new UIButton(28.0f, 420.0f, 50.0f, 30.0f,
     "<<",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
@@ -164,7 +135,7 @@ UIWater::UIWater(UIMapViewGUI *setGui)
     }
     ));
 
-  addChild(new UIButton(102.0f, 320.0f, 50.0f, 30.0f,
+  addChild(new UIButton(102.0f, 420.0f, 50.0f, 30.0f,
     ">>",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Disabled.blp",
     "Interface\\BUTTONS\\UI-DialogBox-Button-Down.blp",
@@ -179,52 +150,101 @@ UIWater::UIWater(UIMapViewGUI *setGui)
   updateData();
 }
 
-void UIWater::updatePos(int tileX, int tileZ)
+void UIWater::updatePos(tile_index const& newTile)
 {
-  if (tile.x == tileX && tile.z == tileZ) return;
+  if (newTile == tile) return;
 
-  tile = tile_index(tileX, tileZ);
+  tile = newTile;
 
   updateData();
 }
 
 void UIWater::updateData()
 {
-  float h = gWorld->HaveSelectWater(tile);
-  if (h)
-  {
-    std::stringstream ms;
-    ms << h;
-    waterLevel->setText(ms.str());
-  }
-  else
-  {
-    std::stringstream ms;
-    ms << gWorld->getWaterHeight(tile);
-    waterLevel->setText(ms.str());
-  }
-  waterOpacity->value = (gWorld->getWaterTrans(tile) / 255.0f);
-
   std::stringstream mt;
-  mt << gWorld->getWaterType(tile) << " - " << LiquidTypeDB::getLiquidName(gWorld->getWaterType(tile));
-
+  mt << _liquid_id << " - " << LiquidTypeDB::getLiquidName(_liquid_id);
   waterType->setText(mt.str());
-}
-
-void UIWater::setWaterTrans(float val)
-{
-  if (std::fmod(val, 0.1f) > 0.1f) return; //reduce performence hit
-  gWorld->setWaterTrans(tile, (unsigned char)val);
-}
-
-void UIWater::changeWaterHeight (float height)
-{
-  gWorld->setWaterHeight(tile, height);
-  updateData();
 }
 
 void UIWater::changeWaterType(int waterint)
 {
-  gWorld->setWaterType(tile, waterint);
+  _liquid_id = waterint;
   updateData();
+}
+
+void UIWater::changeRadius(float change)
+{
+  _radius = std::max(0.0f, std::min(250.0f, _radius + change));
+  _radius_slider->setValue(_radius / 250.0f);
+}
+
+void UIWater::changeOrientation(float change)
+{
+  _orientation += change;
+
+  if (_orientation < 0.0f)
+  {
+    _orientation += 360.0f;
+  }
+  else if (_orientation > 360.0f)
+  {
+    _orientation -= 360.0f;
+  }
+
+  _orientation_slider->setValue(_orientation / 360.0f);
+}
+
+void UIWater::changeAngle(float change)
+{
+  _angle = std::max(0.0f, std::min(89.0f, _angle + change));
+  _angle_slider->setValue(_angle / 90.0f);
+}
+
+void UIWater::paintLiquid(math::vector_3d const& pos, bool add)
+{
+  gWorld->paintLiquid( pos
+                     , _radius
+                     , _liquid_id
+                     , add
+                     , math::degrees(_angled_mode ? _angle : 0.0f)
+                     , math::degrees(_angled_mode ? _orientation : 0.0f)
+                     , _locked
+                     , _lock_pos
+                     , _override_height
+                     , _override_liquid_id
+                     , get_opacity_factor()
+                     );
+}
+
+void UIWater::lockPos(math::vector_3d const& cursor_pos)
+{ 
+  _lock_pos = cursor_pos;
+
+  if (!_locked)
+  {
+    toggle_lock();
+  }
+}
+
+void UIWater::toggle_lock()
+{
+  _locked = !_locked;
+  _lock_checkbox->setState(_locked);
+}
+
+void UIWater::toggle_angled_mode()
+{
+  _angled_mode = !_angled_mode;
+  _angle_checkbox->setState(_angled_mode);
+}
+
+float UIWater::get_opacity_factor() const
+{
+  switch (_opacity_mode)
+  {
+  default:          // values found by experimenting
+  case river_opacity:  return 0.0337f;
+  case ocean_opacity:  return 0.007f;
+  case custom_opacity: return _custom_opacity_factor;
+  }
 }

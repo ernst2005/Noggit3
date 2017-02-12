@@ -62,6 +62,7 @@ namespace opengl
     void readPixels (GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid* data);
 
     void lineWidth (GLfloat);
+    void lineStipple (GLint factor, GLushort pattern);
 
     void pointParameterf (GLenum pname, GLfloat param);
     void pointParameteri (GLenum pname, GLint param);
@@ -172,6 +173,7 @@ namespace opengl
 
     GLint getUniformLocation (GLuint program, GLchar const* name);
     void uniform1i (GLint location, GLint value);
+    void uniform1ui (GLint location, GLuint value);
     void uniform1f (GLint location, GLfloat value);
     void uniform1iv (GLint location, GLsizei count, GLint const* value);
     void uniform3fv (GLint location, GLsizei count, GLfloat const* value);

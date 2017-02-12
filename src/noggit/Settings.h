@@ -4,6 +4,8 @@
 
 #include <string>
 
+#include <boost/optional.hpp>
+
 class Settings
 {
 public:
@@ -21,6 +23,15 @@ public:
 
   bool tabletMode;
   bool renderModelsWithBox;
+
+  struct mysql_connection_info
+  {
+    std::string Server;
+    std::string User;
+    std::string Pass;
+    std::string Database;
+  };
+  boost::optional<mysql_connection_info> mysql = boost::none;
 
   const bool& noAntiAliasing() const;
 

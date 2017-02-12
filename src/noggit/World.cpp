@@ -1,13 +1,16 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
 
+
+#include <noggit/World.h>
+
 #include <noggit/Brush.h> // brush
+#include <noggit/ChunkWater.hpp>
 #include <noggit/ConfigFile.h>
 #include <noggit/DBC.h>
 #include <noggit/Environment.h>
 #include <noggit/Frustum.h>
 #include <noggit/Log.h>
 #include <noggit/MapChunk.h>
-#include <noggit/MapTile.h>
 #include <noggit/MapTile.h>
 #include <noggit/Misc.h>
 #include <noggit/ModelManager.h> // ModelManager
@@ -17,9 +20,9 @@
 #include <noggit/TileWater.hpp>// tile water
 #include <noggit/Video.h>
 #include <noggit/WMOInstance.h> // WMOInstance
-#include <noggit/World.h>
 #include <noggit/map_index.hpp>
 #include <noggit/texture_set.hpp>
+#include <noggit/tool_enums.hpp>
 #include <noggit/ui/TexturingGUI.h>
 #include <opengl/matrix.hpp>
 #include <opengl/scoped.hpp>
@@ -58,7 +61,7 @@ namespace
     gl.end();
   }
 
-  void render_square(math::vector_3d const& pos, float size, float orientation)
+  void draw_square(math::vector_3d const& pos, float size, float orientation)
   {
     float dx1 = size*cos(orientation) - size*sin(orientation);
     float dx2 = size*cos(orientation + math::constants::pi / 2) - size*sin(orientation + math::constants::pi / 2);
@@ -74,6 +77,16 @@ namespace
     gl.vertex3f(pos.x - dx2, pos.y, pos.z - dz2);
     gl.vertex3f(pos.x + dx1, pos.y, pos.z + dz1);
     gl.end();
+  }
+
+  void render_square(math::vector_3d const& pos, float radius, float orientation, float inner_radius = 0.0f, bool useInnerRadius = true)
+  {
+    draw_square(pos, radius, orientation);
+
+    if (useInnerRadius)
+    {
+      draw_square(pos, inner_radius, orientation);
+    }
   }
 
 
@@ -132,40 +145,49 @@ namespace
     draw_sphere (radius);
   }
 
-  void draw_disk_point (float radius, math::radians arc)
+  void draw_disk_point (float radius, math::radians& arc, math::radians const& angle, math::radians const& orientation)
   {
-    gl.vertex3f (radius * math::sin (arc), radius * math::cos (arc), 0.0f);
+    float x = radius * math::sin(arc);
+    float y = radius * math::cos(arc);
+    float z = (y * math::cos(orientation) + x * math::sin(orientation)) * math::tan(angle);;
+    gl.vertex3f (x, y, z);
   }
-  void draw_disk (float radius)
+  void draw_disk (float radius, bool stipple, math::radians const& angle, math::radians const& orientation)
   {
-    int const slices (std::max (15.0f, radius * 1.5f));
+    int const slices (std::max (35.0f, radius * 1.5f));
     static math::radians const max (2.0f * math::constants::pi);
+
     float const stride (max._ / slices);
 
-    gl.begin (GL_LINE_LOOP);
-    for (math::radians arc (0.0f); arc._ < max._; arc._ += stride)
+    if (stipple)
     {
-      draw_disk_point (radius, arc);
+      gl.enable(GL_LINE_STIPPLE);
+      gl.lineStipple(10, 0xAAAA);
     }
-    gl.end();
 
-    gl.begin (GL_LINE_LOOP);
-    for (math::radians arc (0.0f); arc._ < max._; arc._ += stride)
-    {
-      draw_disk_point (radius + 1.0f, arc);
-    }
-    gl.end();
+	  gl.lineWidth(3.0f);
 
-    for (math::radians arc (0.0f); arc._ < max._; arc._ += stride)
-    {
-      gl.begin (GL_LINES);
-      draw_disk_point (radius, arc);
-      draw_disk_point (radius + 1.0f, arc);
+      gl.begin (GL_LINE_LOOP);
+      for (math::radians arc (0.0f); arc._ < max._; arc._ += stride)
+      {
+        draw_disk_point (radius, arc, angle, orientation);
+      }
       gl.end();
+
+	  gl.lineWidth(1.0f);
+
+    if (stipple)
+    {
+      gl.disable(GL_LINE_STIPPLE);
     }
   }
 
-  void render_disk (::math::vector_3d const& position, float radius)
+  void render_disk( ::math::vector_3d const& position
+                  , float radius
+                  , bool stipple = false
+                  , math::radians const& angle = math::radians(0.0f)
+                  , math::radians const& orientation = math::radians(0.0f)
+                  )
   {
     opengl::scoped::bool_setter<GL_LIGHTING, GL_FALSE> lighting;
 
@@ -176,7 +198,7 @@ namespace
       opengl::scoped::bool_setter<GL_COLOR_MATERIAL, GL_TRUE> color_material;
 
       gl.multMatrixf (math::matrix_4x4 (math::matrix_4x4::translation, position).transposed());
-      gl.multMatrixf (math::matrix_4x4 (math::matrix_4x4::rotation, math::degrees::vec3 {math::degrees (90.0f), math::degrees (0.0f), math::degrees (0.0f)}).transposed());
+      gl.multMatrixf (math::matrix_4x4 (math::matrix_4x4::rotation_xyz, math::degrees::vec3 {math::degrees (90.0f), math::degrees (0.0f), math::degrees (0.0f)}).transposed());
 
       //! \todo This should be passed in!
       gl.color4f ( Environment::getInstance()->cursorColorR
@@ -185,16 +207,17 @@ namespace
                  , Environment::getInstance()->cursorColorA
                  );
 
-      draw_disk (radius);
+      draw_disk (radius, stipple, angle, orientation);
     }
 
     {
       opengl::scoped::matrix_pusher matrix;
 
-      gl.multMatrixf (math::matrix_4x4 (math::matrix_4x4::translation, position).transposed());
+      gl.multMatrixf(math::matrix_4x4(math::matrix_4x4::translation, position).transposed());
 
-      draw_sphere (0.3f);
+      draw_sphere(0.3f);
     }
+
   }
 }
 
@@ -245,11 +268,7 @@ bool World::IsEditableWorld(int pMapId)
 }
 
 World::World(const std::string& name)
-  : ex(-1)
-  , ez(-1)
-  , cx(-1)
-  , cz(-1)
-  , mCurrentSelection()
+  : mCurrentSelection()
   , SelectionMode(false)
   , mWmoFilename("")
   , mWmoEntry(ENTRY_MODF())
@@ -257,9 +276,6 @@ World::World(const std::string& name)
   , alphatexcoords(0)
   , mMapId(0xFFFFFFFF)
   , ol(nullptr)
-  , l_const(0.0f)
-  , l_linear(0.7f)
-  , l_quadratic(0.03f)
   , drawdoodads(true)
   , drawfog(false)
   , drawlines(false)
@@ -290,6 +306,8 @@ World::World(const std::string& name)
   , mapstrip2(nullptr)
   , camera(math::vector_3d(0.0f, 0.0f, 0.0f))
   , lookat(math::vector_3d(0.0f, 0.0f, 0.0f))
+  , vertex_angle(0.0f)
+  , vertex_orientation(0.0f)
 {
   for (DBCFile::Iterator i = gMapDB.begin(); i != gMapDB.end(); ++i)
   {
@@ -319,141 +337,187 @@ World::World(const std::string& name)
 
 }
 
+static inline unsigned int color_for_height (int16_t height)
+{
+  //TEMP: this is not here to stay.
+  // eventually all this stuff should get its own class.
+  struct color
+  {
+    color(unsigned char r, unsigned char g, unsigned char b)
+      : _r(r)
+      , _g(g)
+      , _b(b)
+    {}
+
+    unsigned int to_int() const {
+      return (_r) | (_g << 8) | (_b << 16) | (unsigned int)(255 << 24);
+    }
+
+    operator unsigned int () const {
+      return to_int();
+    }
+
+    unsigned char _r;
+    unsigned char _g;
+    unsigned char _b;
+  };
+
+  struct ranged_color
+  {
+    ranged_color (const color& c, const int16_t& start, const int16_t& stop)
+      : _color (c)
+      , _start (start)
+      , _stop (stop) 
+    {}
+
+    const color   _color;
+    const int16_t _start;
+    const int16_t _stop;
+  };
+
+  static const ranged_color colors[] =
+    { ranged_color (color (20, 149, 7), 0, 600)
+    , ranged_color (color (137, 84, 21), 600, 1200)
+    , ranged_color (color (96, 96, 96), 1200, 1600)
+    , ranged_color (color (255, 255, 255), 1600, 0x7FFF)
+    };
+  static const size_t num_colors (sizeof (colors) / sizeof (ranged_color));
+
+  if (height < colors[0]._start)
+  {
+    return color (0, 0, 255 + std::max (height / 2.0, -255.0));
+  }
+  else if (height >= colors[num_colors - 1]._stop)
+  {
+    return colors[num_colors]._color;
+  }
+
+  float t (1.0);
+  size_t correct_color (num_colors - 1);
+
+  for (size_t i (0); i < num_colors - 1; ++i)
+  {
+    if (height >= colors[i]._start && height < colors[i]._stop)
+    {
+      t = float(height - colors[i]._start) / float (colors[i]._stop - colors[i]._start);
+      correct_color = i;
+      break;
+    }
+  }
+
+  return color ( (colors[correct_color + 1]._color._r) * t + (colors[correct_color]._color._r) * (1.0 - t)
+               , (colors[correct_color + 1]._color._g) * t + (colors[correct_color]._color._g) * (1.0 - t)
+               , (colors[correct_color + 1]._color._b) * t + (colors[correct_color]._color._b) * (1.0 - t)
+               );
+}
+
 void World::initMinimap()
 {
   std::stringstream filename;
   filename << "World\\Maps\\" << basename << "\\" << basename << ".wdl";
 
-  MPQFile f(filename.str());
-  if (f.isEof()) {
+  MPQFile wdl_file (filename.str());
+  if (wdl_file.isEof())
+  {
     LogError << "file \"World\\Maps\\" << basename << "\\" << basename << ".wdl\" does not exist." << std::endl;
     return;
   }
 
-  int ofsbuf[64][64];
-  memset(ofsbuf, 0, 64 * 64 * 4);
+  uint32_t fourcc;
+  uint32_t size;
 
-  int fourcc(0);
-  size_t size(0);
+  // - MVER ----------------------------------------------
 
-  while (!f.isEof()) {
-    f.read(&fourcc, 4);
-    f.read(&size, 4);
+  uint32_t version;
 
-    size_t nextpos = f.getPos() + size;
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+  wdl_file.read (&version, 4);
 
-    if (fourcc == 'MAOF')
+  assert (fourcc == 'MVER' && size == 4 && version == 18);
+
+  // - MWMO ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MWMO');
+      // Filenames for WMO that appear in the low resolution map. Zero terminated strings.
+
+  wdl_file.seekRelative (size);
+
+  // - MWID ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MWID');
+      // List of indexes into the MWMO chunk.
+
+  wdl_file.seekRelative (size);
+
+  // - MODF ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MODF');
+      // Placement information for the WMO. Appears to be the same 64 byte structure used in the WDT and ADT MODF chunks.
+
+  wdl_file.seekRelative (size);
+
+  // - MAOF ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MAOF' && size == 64 * 64 * sizeof (uint32_t));
+
+  uint32_t mare_offsets[64][64];
+  wdl_file.read (mare_offsets, 64 * 64 * sizeof (uint32_t));
+
+  // - MARE and MAHO by offset ---------------------------
+
+  gl.genTextures(1, &minimap);
+
+  unsigned int *texbuf = new unsigned int[512 * 512];
+  memset(texbuf, 0, 512 * 512 * 4);
+
+  for (size_t y (0); y < 64; ++y)
+  {
+    for (size_t x (0); x < 64; ++x)
     {
-      f.read(ofsbuf, 64 * 64 * 4);
-    }
-    else if (fourcc == 'MARE')
-    {
-      gl.genTextures(1, &minimap);
+      if (!mare_offsets[y][x])
+        continue;
 
-      unsigned int *texbuf = new unsigned int[512 * 512];
-      memset(texbuf, 0, 512 * 512 * 4);
+      wdl_file.seek (mare_offsets[y][x]);
+      wdl_file.read (&fourcc, 4);
+      wdl_file.read (&size, 4);
 
-      // as alpha is unused, maybe I should try 24bpp? :(
-      int16_t tilebuf[17 * 17];
+      assert (fourcc == 'MARE');
+      assert (size == 0x442);
 
-      for (int j = 0; j<64; ++j) {
-        for (int i = 0; i<64; ++i) {
-          if (ofsbuf[j][i]) {
-            f.seek((size_t)(ofsbuf[j][i] + 8));
-            f.read(tilebuf, 17 * 17 * 2);
+      //! \todo There also is a second heightmap appended which has additional 16*16 pixels.
+      //! \todo There also is MAHO giving holes into this heightmap.
 
-            // make minimap
-            // for a 512x512 minimap texture, and 64x64 tiles, one tile is 8x8 pixels
-            for (int z = 0; z<8; z++) {
-              for (int x = 0; x<8; x++) {
-                int16_t hval = tilebuf[(z * 2) * 17 + x * 2]; // for now
+      const int16_t* data (wdl_file.get<int16_t> (mare_offsets[y][x] + 8));
 
-                                                              // make rgb from height value
-                unsigned char r, g, b;
-                if (hval < 0) {
-                  // water = blue
-                  if (hval < -511) hval = -511;
-                  hval /= -2;
-                  r = g = 0;
-                  b = (unsigned char)(255 - hval);
-                }
-                else {
-                  // above water = should apply a palette :(
-                  /*
-                  float fh = hval / 1600.0f;
-                  if (fh > 1.0f) fh = 1.0f;
-                  unsigned char c = (unsigned char) (fh * 255.0f);
-                  r = g = b = c;
-                  */
-
-                  // green: 20,149,7    0-600
-                  // brown: 137, 84, 21  600-1200
-                  // gray: 96, 96, 96    1200-1600
-                  // white: 255, 255, 255
-                  unsigned char r1, r2, g1, g2, b1, b2;
-                  float t;
-
-                  if (hval < 600) {
-                    r1 = 20;
-                    r2 = 137;
-                    g1 = 149;
-                    g2 = 84;
-                    b1 = 7;
-                    b2 = 21;
-                    t = hval / 600.0f;
-                  }
-                  else if (hval < 1200) {
-                    r2 = 96;
-                    r1 = 137;
-                    g2 = 96;
-                    g1 = 84;
-                    b2 = 96;
-                    b1 = 21;
-                    t = (hval - 600) / 600.0f;
-                  }
-                  else /*if (hval < 1600)*/ {
-                    r1 = 96;
-                    r2 = 255;
-                    g1 = 96;
-                    g2 = 255;
-                    b1 = 96;
-                    b2 = 255;
-                    if (hval >= 1600) hval = 1599;
-                    t = (hval - 1200) / 600.0f;
-                  }
-
-                  //! \todo  add a regular palette here
-
-                  r = (unsigned char)(r2*t + r1*(1.0f - t));
-                  g = (unsigned char)(g2*t + g1*(1.0f - t));
-                  b = (unsigned char)(b2*t + b1*(1.0f - t));
-                }
-
-                texbuf[(j * 8 + z) * 512 + i * 8 + x] = (r) | (g << 8) | (b << 16) | (unsigned int)(255 << 24);
-              }
-            }
-          }
+      for (size_t j (0); j < 8; ++j)
+      {
+        for (size_t i (0); i < 8; ++i)
+        {
+          texbuf[(y * 8 + j) * 512 + x * 8 + i] = color_for_height (data[(j * 2) * 17 + i * 2]);
         }
       }
-
-      gl.bindTexture(GL_TEXTURE_2D, minimap);
-      gl.texImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, texbuf);
-      gl.texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      gl.texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-      delete[] texbuf;
-      f.close();
-      return;
     }
-    else if (fourcc == 'MAHO') {
-      /*
-      After each MARE chunk there follows a MAHO (MapAreaHOles) chunk. It may be left out if the data is supposed to be 0 all the time.
-      Its an array of 16 shorts. Each short is a bitmask. If the bit is not set, there is a hole at this position.
-      */
-    }
-    f.seek(nextpos);
   }
-  f.close();
+
+  gl.bindTexture(GL_TEXTURE_2D, minimap);
+  gl.texImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, texbuf);
+  gl.texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  gl.texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+  delete[] texbuf;
 }
 
 bool World::IsSelection(int pSelectionType)
@@ -468,114 +532,146 @@ bool World::HasSelection()
 
 void World::initLowresTerrain()
 {
-  //! \todo god dammn! this is so fucking expensive, change it, use VBOs or sth
-
   std::stringstream filename;
   filename << "World\\Maps\\" << basename << "\\" << basename << ".wdl";
 
-  int16_t tilebuf[17 * 17];
-  int16_t tilebuf2[16 * 16];
-  math::vector_3d lowres[17][17];
-  math::vector_3d lowsub[16][16];
-  int32_t ofsbuf[64][64];
-
-  MPQFile f(filename.str());
-
-  int32_t fourcc;
-  size_t size;
-
-  while (!f.isEof())
+  MPQFile wdl_file (filename.str());
+  if (wdl_file.isEof())
   {
-    f.read(&fourcc, 4);
-    f.read(&size, 4);
-
-    if (size == 0)
-      continue;
-
-    size_t nextpos = f.getPos() + size;
-
-    if (fourcc == 'MAOF')
-    {
-      f.read(ofsbuf, 64 * 64 * 4);
-
-      for (size_t j = 0; j<64; ++j)
-      {
-        for (size_t i = 0; i<64; ++i)
-        {
-          if (ofsbuf[j][i])
-          {
-            f.seek((size_t)(ofsbuf[j][i] + 8));
-            f.read(tilebuf, 17 * 17 * 2);
-            f.read(tilebuf2, 16 * 16 * 2);
-
-            for (size_t y = 0; y<17; y++)
-            {
-              for (size_t x = 0; x<17; x++)
-              {
-                lowres[y][x] = math::vector_3d(TILESIZE*(i + x / 16.0f), tilebuf[y * 17 + x], TILESIZE*(j + y / 16.0f));
-              }
-            }
-            for (size_t y = 0; y<16; y++)
-            {
-              for (size_t x = 0; x<16; x++)
-              {
-                lowsub[y][x] = math::vector_3d(TILESIZE*(i + (x + 0.5f) / 16.0f), tilebuf2[y * 16 + x], TILESIZE*(j + (y + 0.5f) / 16.0f));
-              }
-            }
-
-            lowrestiles[j][i] = new opengl::call_list();
-            lowrestiles[j][i]->start_recording();
-
-            gl.begin(GL_TRIANGLES);
-            for (size_t y = 0; y < 16; y++)
-            {
-              for (size_t x = 0; x < 16; x++)
-              {
-                gl.vertex3fv(lowres[y][x]);
-                gl.vertex3fv(lowsub[y][x]);
-                gl.vertex3fv(lowres[y][x + 1]);
-                gl.vertex3fv(lowres[y][x + 1]);
-                gl.vertex3fv(lowsub[y][x]);
-                gl.vertex3fv(lowres[y + 1][x + 1]);
-                gl.vertex3fv(lowres[y + 1][x + 1]);
-                gl.vertex3fv(lowsub[y][x]);
-                gl.vertex3fv(lowres[y + 1][x]);
-                gl.vertex3fv(lowres[y + 1][x]);
-                gl.vertex3fv(lowsub[y][x]);
-                gl.vertex3fv(lowres[y][x]);
-              }
-            }
-            gl.end();
-
-            lowrestiles[j][i]->end_recording();
-
-            /* OLD:
-            // draw tiles 16x16?
-            gl.begin(GL_TRIANGLE_STRIP);
-            for (int y=0; y<16; y++) {
-            // end jump
-            if (y>0) gl.vertex3fv(lowres[y][0]);
-            for (int x=0; x<17; x++) {
-            gl.vertex3fv(lowres[y][x]);
-            gl.vertex3fv(lowres[y+1][x]);
-            }
-            // start jump
-            if (y<15) gl.vertex3fv(lowres[y+1][16]);
-            }
-            gl.end();
-            */
-            // draw tiles 17*17+16*16
-          }
-        }
-      }
-      f.close();
-      return;
-    }
-    f.seek(nextpos);
+    LogError << "file \"World\\Maps\\" << basename << "\\" << basename << ".wdl\" does not exist." << std::endl;
+    return;
   }
 
-  LogError << "Error in reading low res terrain. MAOF not found." << std::endl;
-  f.close();
+  uint32_t fourcc;
+  uint32_t size;
+
+  // - MVER ----------------------------------------------
+
+  uint32_t version;
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+  wdl_file.read (&version, 4);
+
+  assert (fourcc == 'MVER' && size == 4 && version == 18);
+
+  // - MWMO ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MWMO');
+      // Filenames for WMO that appear in the low resolution map. Zero terminated strings.
+
+  wdl_file.seekRelative (size);
+
+  // - MWID ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MWID');
+      // List of indexes into the MWMO chunk.
+
+  wdl_file.seekRelative (size);
+
+  // - MODF ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MODF');
+      // Placement information for the WMO. Appears to be the same 64 byte structure used in the WDT and ADT MODF chunks.
+
+  wdl_file.seekRelative (size);
+
+  // - MAOF ----------------------------------------------
+
+  wdl_file.read (&fourcc, 4);
+  wdl_file.read (&size, 4);
+
+  assert (fourcc == 'MAOF' && size == 64 * 64 * sizeof (uint32_t));
+
+  uint32_t mare_offsets[64][64];
+  wdl_file.read (mare_offsets, 64 * 64 * sizeof (uint32_t));
+
+  // - MARE and MAHO by offset ---------------------------
+
+  gl.genTextures(1, &minimap);
+
+  unsigned int *texbuf = new unsigned int[512 * 512];
+  memset(texbuf, 0, 512 * 512 * 4);
+
+  for (size_t y (0); y < 64; ++y)
+  {
+    for (size_t x (0); x < 64; ++x)
+    {
+      if (!mare_offsets[y][x])
+        continue;
+
+      wdl_file.seek (mare_offsets[y][x]);
+      wdl_file.read (&fourcc, 4);
+      wdl_file.read (&size, 4);
+
+      assert (fourcc == 'MARE');
+      assert (size == 0x442);
+
+      math::vector_3d vertices_17[17][17];
+      math::vector_3d vertices_16[16][16];
+
+      const int16_t* data_17 (wdl_file.get<int16_t> (mare_offsets[y][x] + 8));
+
+      for (size_t j (0); j < 17; ++j)
+      {
+        for (size_t i (0); i < 17; ++i)
+        {
+          vertices_17[j][i] = math::vector_3d ( TILESIZE * (x + i / 16.0f)
+                                    , data_17[j * 17 + i]
+                                    , TILESIZE * (y + j / 16.0f)
+                                    );
+        }
+      }
+
+      const int16_t* data_16 (wdl_file.get<int16_t> (mare_offsets[y][x] + 8 + 17 * 17 * sizeof (int16_t)));
+
+      for (size_t j (0); j < 16; ++j)
+      {
+        for (size_t i (0); i < 16; ++i)
+        {
+          vertices_16[j][i] = math::vector_3d ( TILESIZE * (x + (i + 0.5f) / 16.0f)
+                                    , data_16[j * 16 + i]
+                                    , TILESIZE * (y + (j + 0.5f) / 16.0f)
+                                    );
+        }
+      }
+
+      lowrestiles[y][x] = new opengl::call_list();
+      lowrestiles[y][x]->start_recording();
+
+      gl.begin( GL_TRIANGLES );
+      for (size_t j (0); j < 16; ++j )
+      {
+        for (size_t i (0); i < 16; ++i )
+        {
+          gl.vertex3fv (vertices_17[j][i]);
+          gl.vertex3fv (vertices_16[j][i]);
+          gl.vertex3fv (vertices_17[j][i + 1]);
+          gl.vertex3fv (vertices_17[j][i + 1]);
+          gl.vertex3fv (vertices_16[j][i]);
+          gl.vertex3fv (vertices_17[j + 1][i + 1]);
+          gl.vertex3fv (vertices_17[j + 1][i + 1]);
+          gl.vertex3fv (vertices_16[j][i]);
+          gl.vertex3fv (vertices_17[j + 1][i]);
+          gl.vertex3fv (vertices_17[j + 1][i]);
+          gl.vertex3fv (vertices_16[j][i]);
+          gl.vertex3fv (vertices_17[j][i]);
+        }
+      }
+      gl.end();
+
+      lowrestiles[y][x]->end_recording();
+    }
+  }
 }
 
 void World::initGlobalVBOs(GLuint* pDetailTexCoords, GLuint* pAlphaTexCoords)
@@ -785,23 +881,36 @@ void World::setupFog()
   }
 }
 
-extern int terrainMode;
-
-void World::draw(float brushRadius, float hardness)
+void World::draw ( math::vector_3d const& cursor_pos
+                 , float brushRadius
+                 , float hardness
+                 , bool highlightPaintableChunks
+                 , bool draw_contour
+                 , float innerRadius
+                 , math::vector_3d const& ref_pos
+                 , float angle
+                 , float orientation
+                 , bool use_ref_pos
+                 , bool angled_mode
+                 , bool draw_paintability_overlay
+                 , bool draw_chunk_flag_overlay
+                 , bool draw_water_overlay
+                 , bool draw_areaid_overlay
+                 , editing_mode terrainMode
+                 , math::vector_3d const& camera_pos
+                 , math::vector_3d const& camera_lookat
+                 )
 {
-  opengl::matrix::look_at (camera, lookat, {0.0f, 1.0f, 0.0f});
+  opengl::matrix::look_at (camera_pos, camera_lookat, {0.0f, 1.0f, 0.0f});
 
   Frustum const frustum;
-
-  ///gl.disable(GL_LIGHTING);
-  ///gl.color4f(1,1,1,1);World::draw()
 
   bool hadSky = false;
   if (drawwmo || mapIndex->hasAGlobalWMO())
   {
     for (std::map<int, WMOInstance>::iterator it = mWMOInstances.begin(); it != mWMOInstances.end(); ++it)
     {
-      hadSky = it->second.wmo->drawSkybox(this->camera, it->second.extents[0], it->second.extents[1]);
+      hadSky = it->second.wmo->drawSkybox(camera_pos, it->second.extents[0], it->second.extents[1]);
       if (hadSky)
       {
         break;
@@ -817,10 +926,10 @@ void World::draw(float brushRadius, float hardness)
 
   int daytime = static_cast<int>(time) % 2880;
   outdoorLightStats = ol->getLightStats(daytime);
-  skies->initSky(camera, daytime);
+  skies->initSky(camera_pos, daytime);
 
   if (!hadSky)
-    hadSky = skies->drawSky(camera);
+    hadSky = skies->drawSky(camera_pos);
 
   // clearing the depth buffer only - color buffer is/has been overwritten anyway
   // unless there is no sky OR skybox
@@ -845,6 +954,11 @@ void World::draw(float brushRadius, float hardness)
     //gl.color3f(0,1,0);
     //gl.disable(GL_FOG);
     const int lrr = 2;
+
+    int cx (2);
+    int cz (2);
+
+    //! \todo broken: should be current tile +- lrr
     for (int i = cx - lrr; i <= cx + lrr; ++i) { //! \todo maybe broke this, investigate
       for (int j = cz - lrr; j <= cz + lrr; ++j) {
         //! \todo  some annoying visual artifacts when the verylowres terrain overlaps
@@ -891,21 +1005,21 @@ void World::draw(float brushRadius, float hardness)
   gl.clientActiveTexture(GL_TEXTURE0);
 
   // height map w/ a zillion texture passes
-  //! \todo  Do we need to push the matrix here?
-
   if (drawterrain)
   {
-    opengl::scoped::matrix_pusher const matrix;
     for (MapTile* tile : mapIndex->loaded_tiles())
     {
-      tile->draw(frustum);
+      tile->draw ( frustum
+                 , highlightPaintableChunks
+                 , draw_contour
+                 , draw_paintability_overlay
+                 , draw_chunk_flag_overlay
+                 , draw_water_overlay
+                 , draw_areaid_overlay
+                 , drawwireframe
+                 );
     }
   }
-
-  math::vector_3d const pos ( Environment::getInstance()->Pos3DX
-                            , Environment::getInstance()->Pos3DY
-                            , Environment::getInstance()->Pos3DZ
-                            );
 
   // Selection circle
   if (this->IsSelection(eEntry_MapChunk))
@@ -917,37 +1031,64 @@ void World::draw(float brushRadius, float hardness)
     //gl.depthMask(false);
     //gl.disable(GL_DEPTH_TEST);
 
-    if (terrainMode == 0 && Environment::getInstance()->groundBrushType == 5)
+    if (terrainMode == editing_mode::ground && Environment::getInstance()->groundBrushType == eTerrainType_Quadra)
     {
-      render_square(pos, brushRadius / 2.0f, 0.0f);
+      render_square(cursor_pos, brushRadius / 2.0f, 0.0f, brushRadius / 2.0f * innerRadius, true);
     }
     else
     {
       if (Environment::getInstance()->cursorType == 1)
       {
-        render_disk(pos, brushRadius);
+        render_disk(cursor_pos, brushRadius);
+        if (innerRadius >= 0.01f)
+        {
+          render_disk(cursor_pos, brushRadius * innerRadius, true);
+        }
         if (hardness >= 0.01f)
         {
-          render_disk(pos, brushRadius * hardness);
+          render_disk(cursor_pos, brushRadius * hardness, true);
         }
       }
       else if (Environment::getInstance()->cursorType == 2)
       {
-        render_sphere(pos, brushRadius);
+        render_sphere(cursor_pos, brushRadius);
       }
     }
-
-    if (terrainMode == 1 && Environment::getInstance()->flattenAngleEnabled)
+    if (angled_mode && !use_ref_pos)
     {
-      math::degrees o = math::degrees(Environment::getInstance()->flattenOrientation);
+      math::degrees o = math::degrees(orientation);
       float x = brushRadius * cos(o);
       float z = brushRadius * sin(o);
-      float h = brushRadius * tan(math::degrees(Environment::getInstance()->flattenAngle));
-      math::vector_3d const dest1 = pos + math::vector_3d(x, 0.0f, z);
-      math::vector_3d const dest2 = pos + math::vector_3d(x, h, z);
-      render_line(pos, dest1);
-      render_line(pos, dest2);
+      float h = brushRadius * tan(math::degrees(angle));
+      math::vector_3d const dest1 = cursor_pos + math::vector_3d(x, 0.f, z);
+      math::vector_3d const dest2 = cursor_pos + math::vector_3d(x, h, z);
+      render_line(cursor_pos, dest1);
+      render_line(cursor_pos, dest2);
       render_line(dest1, dest2);
+    }
+
+    if (use_ref_pos)
+    {
+      render_sphere(ref_pos, 1.0f);
+
+      math::vector_3d pos = cursor_pos;
+
+      if (angled_mode)
+      {
+        // orient + 90.0f because of the rotation done in render_disk
+        math::degrees a(angle), o(orientation+90.0f);
+        pos.y = misc::angledHeight(ref_pos, pos, a, math::degrees(orientation));
+        render_disk(pos, brushRadius, false, a, o);
+        render_line(ref_pos, cursor_pos);
+        render_line(ref_pos, pos);
+      }
+      else
+      {  
+        pos.y = ref_pos.y;
+        render_disk(pos, brushRadius);
+      }
+
+      render_line(cursor_pos, pos);
     }
 
 
@@ -958,21 +1099,66 @@ void World::draw(float brushRadius, float hardness)
 
   }
 
-
-  if (drawlines || (terrainMode == 2 && Environment::getInstance()->highlightPaintableChunks))
+  if ( terrainMode == editing_mode::ground && Environment::getInstance()->groundBrushType == eTerrainType_Vertex )
   {
-    gl.disable(GL_COLOR_MATERIAL);
-    opengl::texture::set_active_texture (0);
-    opengl::texture::disable_texture();
-    opengl::texture::set_active_texture (1);
-    opengl::texture::disable_texture();
-    gl.enable(GL_BLEND);
-    gl.blendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    float size = (vertexCenter() - camera_pos).length();
+    gl.pointSize(std::max(0.001f, 10.0f - (1.25f * size / CHUNKSIZE)));
+    gl.color3f(1.0f, 0.0f, 0.0f);
+    gl.begin(GL_POINTS);
+
+    for (math::vector_3d const* pos : _vertices_selected)
+    {
+      gl.vertex3f(pos->x, pos->y + 0.1f, pos->z);
+    }
+    gl.end();
+
+    gl.color3f(0.0f, 0.0f, 1.0f);
+    render_sphere(vertexCenter(), 2.0f);
+    gl.color3f(1.0f, 1.0f, 1.0f);
+  }
+
+
+  if (drawlines || (terrainMode == editing_mode::paint && highlightPaintableChunks))
+  {
+    opengl::program program { { GL_VERTEX_SHADER
+                              , R"code(
+#version 110
+
+attribute vec4 position;
+
+uniform mat4 model_view;
+uniform mat4 projection;
+
+void main()
+{
+  gl_Position = projection * model_view * (position + vec4 (0.0, 0.5, 0.0, 0.0));
+}
+)code"
+                              }
+                            , { GL_FRAGMENT_SHADER
+                              , R"code(
+#version 110
+
+uniform vec4 color;
+
+void main()
+{
+  gl_FragColor = color;
+}
+)code"
+                              }
+                            };
+
+
+    opengl::scoped::use_program line_shader {program};
+
+    line_shader.uniform ("model_view", opengl::matrix::model_view());
+    line_shader.uniform ("projection", opengl::matrix::projection());
 
     setupFog();
     for (MapTile* tile : mapIndex->loaded_tiles())
     {
-      tile->drawLines(frustum);
+      tile->drawLines (line_shader, frustum);
     }
   }
 
@@ -1036,8 +1222,12 @@ void main()
   gl.disable(GL_ALPHA_TEST);
 
   // TEMP: for fucking around with lighting
-  for (OpenGL::Light light = GL_LIGHT0; light < GL_LIGHT0 + 8; ++light)
+  for (opengl::light light = GL_LIGHT0; light < GL_LIGHT0 + 8; ++light)
   {
+    const float l_const( 0.0f );
+    const float l_linear( 0.7f );
+    const float l_quadratic( 0.03f );
+
     gl.lightf(light, GL_CONSTANT_ATTENUATION, l_const);
     gl.lightf(light, GL_LINEAR_ATTENUATION, l_linear);
     gl.lightf(light, GL_QUADRATIC_ATTENUATION, l_quadratic);
@@ -1055,9 +1245,10 @@ void main()
     gl.enable(GL_LIGHTING);  //! \todo  Is this needed? Or does this fuck something up?
     for (std::map<int, ModelInstance>::iterator it = mModelInstances.begin(); it != mModelInstances.end(); ++it)
     {
-      if (!it->second.model->hidden || renderHidden)
+      bool const is_hidden (_hidden_models.count (it->second.model.get()));
+      if (!is_hidden || renderHidden)
       {
-        it->second.draw (frustum);
+        it->second.draw (frustum, is_hidden);
       }
     }
   }
@@ -1075,9 +1266,10 @@ void main()
 
     for (std::map<int, WMOInstance>::iterator it = mWMOInstances.begin(); it != mWMOInstances.end(); ++it)
     {
-      if (!it->second.wmo->hidden || renderHidden)
+      bool const is_hidden (_hidden_map_objects.count (it->second.wmo.get()));
+      if (!is_hidden || renderHidden)
       {
-        it->second.draw (frustum);
+        it->second.draw (frustum, is_hidden);
       }
     }
 
@@ -1093,18 +1285,21 @@ void main()
 
   if (this->drawwater)
   {
+    liquid_render liquid_renderer;
+
+    opengl::scoped::use_program water_shader {liquid_renderer.shader_program()};
+
+    water_shader.uniform ("model_view", opengl::matrix::model_view());
+    water_shader.uniform ("projection", opengl::matrix::projection());
+
     for (MapTile* tile : mapIndex->loaded_tiles())
     {
-      tile->drawWater();
+      tile->drawWater (water_shader);
     }
   }
-
-
-  ex = (int)(camera.x / TILESIZE);
-  ez = (int)(camera.z / TILESIZE);
 }
 
-selection_result World::intersect (math::ray const& ray, bool pOnlyMap)
+selection_result World::intersect (math::ray const& ray, bool pOnlyMap, bool do_objects)
 {
   selection_result results;
 
@@ -1116,14 +1311,19 @@ selection_result World::intersect (math::ray const& ray, bool pOnlyMap)
     }
   }
 
-  // only check when using the ObjectEditor
-  if (!pOnlyMap && terrainMode == 9)
+  if (!pOnlyMap && do_objects)
   {
+    bool const render_hidden (Environment::getInstance()->showModelFromHiddenList);
+
     if (drawmodels)
     {
       for (auto&& model_instance : mModelInstances)
       {
-        model_instance.second.intersect (ray, &results);
+        bool const is_hidden (_hidden_models.count (model_instance.second.model.get()));
+        if (!is_hidden || render_hidden)
+        {
+          model_instance.second.intersect (ray, &results);
+        }
       }
     }
 
@@ -1131,7 +1331,11 @@ selection_result World::intersect (math::ray const& ray, bool pOnlyMap)
     {
       for (auto&& wmo_instance : mWMOInstances)
       {
-        wmo_instance.second.intersect (ray, &results);
+        bool const is_hidden (_hidden_map_objects.count (wmo_instance.second.wmo.get()));
+        if (!is_hidden || render_hidden)
+        {
+          wmo_instance.second.intersect (ray, &results);
+        }
       }
     }
   }
@@ -1139,27 +1343,8 @@ selection_result World::intersect (math::ray const& ray, bool pOnlyMap)
   return results;
 }
 
-math::vector_3d World::getCursorPosOnModel()
-{
-  if (terrainMode == 9)
-  {
-    if (IsSelection (eEntry_Model))
-    {
-      return boost::get<selected_model_type> (*GetCurrentSelection())->pos;
-    }
-    else if (IsSelection (eEntry_WMO))
-    {
-      return boost::get<selected_wmo_type> (*GetCurrentSelection())->pos;
-    }
-  }
-
-  return Environment::getInstance()->get_cursor_pos();
-}
-
 void World::tick(float dt)
 {
-  mapIndex->enterTile(tile_index(ex, ez));
-
   while (dt > 0.1f) {
     ModelManager::updateEmitters(0.1f);
     dt -= 0.1f;
@@ -1167,11 +1352,11 @@ void World::tick(float dt)
   ModelManager::updateEmitters(dt);
 }
 
-unsigned int World::getAreaID()
+unsigned int World::getAreaID (math::vector_3d const& pos)
 {
-  tile_index tile(camera);
-  const int mcx = (const int)(fmod(camera.x, TILESIZE) / CHUNKSIZE);
-  const int mcz = (const int)(fmod(camera.z, TILESIZE) / CHUNKSIZE);
+  tile_index tile(pos);
+  const int mcx = (const int)(fmod(pos.x, TILESIZE) / CHUNKSIZE);
+  const int mcz = (const int)(fmod(pos.z, TILESIZE) / CHUNKSIZE);
 
   MapTile* curTile = mapIndex->getTile(tile);
   if (!curTile)
@@ -1184,112 +1369,39 @@ unsigned int World::getAreaID()
   return !curChunk ? (unsigned int)(curChunk->getAreaID()) : 0;
 }
 
-void World::clearHeight(float x, float z)
+void World::clearHeight(math::vector_3d const& pos)
 {
-  for_all_chunks_on_tile(x, z, [](MapChunk* chunk) {
+  for_all_chunks_on_tile(pos, [](MapChunk* chunk) {
     chunk->clearHeight();
   });
-  for_all_chunks_on_tile(x, z, [](MapChunk* chunk) {
+  for_all_chunks_on_tile(pos, [](MapChunk* chunk) {
     chunk->recalcNorms();
   });
 }
 
-
-void World::clearAllModelsOnADT(const tile_index& tile)
+void World::clearAllModelsOnADT(math::vector_3d const& pos)
 {
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (curTile)
-  {
-    curTile->clearAllModels();
-    mapIndex->setChanged(tile);
-  }
+  for_tile_at(pos, [](MapTile* tile) { tile->clearAllModels(); });
 }
 
-void World::deleteWaterLayer(const tile_index& tile)
+void World::CropWaterADT(math::vector_3d const& pos)
 {
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (curTile)
-  {
-    curTile->Water->deleteLayer(Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
+  for_tile_at(pos, [](MapTile* tile) { tile->CropWater(); });
 }
 
-void World::ClearShader(const tile_index& tile)
+void World::setAreaID(math::vector_3d const& pos, int id, bool adt)
 {
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (curTile)
+  if (adt)
   {
-    curTile->ClearShader();
-    mapIndex->setChanged(tile);
-  }
-}
-
-void World::CropWaterADT(const tile_index& tile)
-{
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (curTile)
-  {
-    curTile->CropWater();
-    mapIndex->setChanged(tile);
-  }
-}
-
-void World::addWaterLayer(const tile_index& tile)
-{
-  MapTile* curTile = mapIndex->getTile(tile);
-
-  if (curTile)
-  {
-    curTile->Water->addLayer(1.0f, (unsigned char)255, Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
-}
-
-void World::addWaterLayerChunk(const tile_index& tile, int i, int j)
-{
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (curTile)
-  {
-    curTile->Water->addLayer(i, j, 1.0f, (unsigned char)255, Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
-}
-
-void World::delWaterLayerChunk(const tile_index& tile, int i, int j)
-{
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (curTile)
-  {
-    curTile->Water->deleteLayer(i, j, Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
-}
-
-void World::addWaterLayer(const tile_index& tile, float height, unsigned char trans)
-{
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (curTile)
-  {
-    curTile->Water->addLayer(height, trans, Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
-}
-
-void World::setAreaID(float x, float z, int id, bool adt)
-{
-  if (adt) 
-  {
-    for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) { chunk->setAreaID(id);});
+    for_all_chunks_on_tile(pos, [&](MapChunk* chunk) { chunk->setAreaID(id);});
   }
   else
   {
-    for_chunk_at(x, z, [&](MapChunk* chunk) { chunk->setAreaID(id);});
+    for_chunk_at(pos, [&](MapChunk* chunk) { chunk->setAreaID(id);});
   }
 }
 
-void World::drawTileMode(float /*ah*/)
+void World::drawTileMode(float /*ah*/, math::vector_3d const& camera_pos)
 {
   gl.clear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
   gl.enable(GL_BLEND);
@@ -1301,12 +1413,12 @@ void World::drawTileMode(float /*ah*/)
 
   {
     opengl::scoped::matrix_pusher const matrix;
-    gl.translatef(-camera.x / CHUNKSIZE, -camera.z / CHUNKSIZE, 0);
+    gl.translatef(-camera_pos.x / CHUNKSIZE, -camera_pos.z / CHUNKSIZE, 0);
 
-    minX = camera.x / CHUNKSIZE - 2.0f*video.ratio() / zoom;
-    maxX = camera.x / CHUNKSIZE + 2.0f*video.ratio() / zoom;
-    minY = camera.z / CHUNKSIZE - 2.0f / zoom;
-    maxY = camera.z / CHUNKSIZE + 2.0f / zoom;
+    minX = camera_pos.x / CHUNKSIZE - 2.0f*video.ratio() / zoom;
+    maxX = camera_pos.x / CHUNKSIZE + 2.0f*video.ratio() / zoom;
+    minY = camera_pos.z / CHUNKSIZE - 2.0f / zoom;
+    maxY = camera_pos.z / CHUNKSIZE + 2.0f / zoom;
 
     gl.enableClientState(GL_COLOR_ARRAY);
     gl.disableClientState(GL_NORMAL_ARRAY);
@@ -1326,7 +1438,7 @@ void World::drawTileMode(float /*ah*/)
   }
 
   if (drawlines) {
-    gl.translatef((GLfloat)fmod(-camera.x / CHUNKSIZE, 16), (GLfloat)fmod(-camera.z / CHUNKSIZE, 16), 0);
+    gl.translatef((GLfloat)fmod(-camera_pos.x / CHUNKSIZE, 16), (GLfloat)fmod(-camera_pos.z / CHUNKSIZE, 16), 0);
     /*  for(int x=-32;x<=48;x++)
     {
     if(x%16==0)
@@ -1355,14 +1467,11 @@ void World::drawTileMode(float /*ah*/)
       gl.end();
     }
   }
-
-  ex = (int)(camera.x / TILESIZE);
-  ez = (int)(camera.z / TILESIZE);
 }
 
 bool World::GetVertex(float x, float z, math::vector_3d *V)
 {
-  tile_index tile(math::vector_3d(x, 0, z));
+  tile_index tile({x, 0, z});
 
   if (!mapIndex->tileLoaded(tile))
   {
@@ -1373,13 +1482,13 @@ bool World::GetVertex(float x, float z, math::vector_3d *V)
 }
 
 template<typename Fun>
-  bool World::for_all_chunks_in_range (float x, float z, float radius, Fun&& fun)
+  bool World::for_all_chunks_in_range (math::vector_3d const& pos, float radius, Fun&& fun)
 {
   bool changed (false);
 
-  for (MapTile* tile : mapIndex->tiles_in_range (x, z, radius))
+  for (MapTile* tile : mapIndex->tiles_in_range (pos, radius))
   {
-    for (MapChunk* chunk : tile->chunks_in_range (x, z, radius))
+    for (MapChunk* chunk : tile->chunks_in_range (pos, radius))
     {
       if (fun (chunk))
       {
@@ -1392,12 +1501,12 @@ template<typename Fun>
   return changed;
 }
 template<typename Fun, typename Post>
-  bool World::for_all_chunks_in_range (float x, float z, float radius, Fun&& fun, Post&& post)
+  bool World::for_all_chunks_in_range (math::vector_3d const& pos, float radius, Fun&& fun, Post&& post)
 {
   std::forward_list<MapChunk*> modified_chunks;
 
   bool changed ( for_all_chunks_in_range
-                   ( x, z, radius
+                   ( pos, radius
                    , [&] (MapChunk* chunk)
                      {
                        if (fun (chunk))
@@ -1419,24 +1528,24 @@ template<typename Fun, typename Post>
 }
 
 
-void World::changeShader(float x, float z, float change, float radius, bool editMode)
+void World::changeShader(math::vector_3d const& pos, float change, float radius, bool editMode)
 {
   for_all_chunks_in_range
-    ( x, z, radius
+    ( pos, radius
     , [&] (MapChunk* chunk)
       {
-        return chunk->ChangeMCCV(x, z, change, radius, editMode);
+        return chunk->ChangeMCCV(pos, change, radius, editMode);
       }
     );
 }
 
-void World::changeTerrain(float x, float z, float change, float radius, int BrushType)
+void World::changeTerrain(math::vector_3d const& pos, float change, float radius, int BrushType, float inner_radius)
 {
   for_all_chunks_in_range
-    ( x, z, radius
+    ( pos, radius
     , [&] (MapChunk* chunk)
       {
-        return chunk->changeTerrain(x, z, change, radius, BrushType);
+        return chunk->changeTerrain(pos, change, radius, BrushType, inner_radius);
       }
     , [] (MapChunk* chunk)
       {
@@ -1445,13 +1554,13 @@ void World::changeTerrain(float x, float z, float change, float radius, int Brus
     );
 }
 
-void World::flattenTerrain(float x, float z, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, math::degrees angle, math::degrees orientation)
+void World::flattenTerrain(math::vector_3d const& pos, float remain, float radius, int BrushType, int flattenType, const math::vector_3d& origin, math::degrees angle, math::degrees orientation)
 {
   for_all_chunks_in_range
-    ( x, z, radius
+    ( pos, radius
     , [&] (MapChunk* chunk)
       {
-        return chunk->flattenTerrain(x, z, remain, radius, BrushType, flattenType, origin, angle, orientation);
+        return chunk->flattenTerrain(pos, remain, radius, BrushType, flattenType, origin, angle, orientation);
       }
     , [] (MapChunk* chunk)
       {
@@ -1460,13 +1569,13 @@ void World::flattenTerrain(float x, float z, float remain, float radius, int Bru
     );
 }
 
-void World::blurTerrain(float x, float z, float remain, float radius, int BrushType)
+void World::blurTerrain(math::vector_3d const& pos, float remain, float radius, int BrushType)
 {
   for_all_chunks_in_range
-    ( x, z, radius
+    ( pos, radius
     , [&] (MapChunk* chunk)
       {
-        return chunk->blurTerrain(x, z, remain, radius, BrushType);
+        return chunk->blurTerrain(pos, remain, radius, BrushType);
       }
     , [] (MapChunk* chunk)
       {
@@ -1475,29 +1584,29 @@ void World::blurTerrain(float x, float z, float remain, float radius, int BrushT
     );
 }
 
-bool World::paintTexture(float x, float z, Brush *brush, float strength, float pressure, OpenGL::Texture* texture)
+bool World::paintTexture(math::vector_3d const& pos, Brush *brush, float strength, float pressure, scoped_blp_texture_reference texture)
 {
   return for_all_chunks_in_range
-    ( x, z, brush->getRadius()
+    ( pos, brush->getRadius()
     , [&] (MapChunk* chunk)
       {
-        return chunk->paintTexture(x, z, brush, strength, pressure, texture);
+        return chunk->paintTexture(pos, brush, strength, pressure, texture);
       }
     );
 }
 
-bool World::sprayTexture(float x, float z, Brush *brush, float strength, float pressure, float spraySize, float sprayPressure, OpenGL::Texture* texture)
+bool World::sprayTexture(math::vector_3d const& pos, Brush *brush, float strength, float pressure, float spraySize, float sprayPressure, scoped_blp_texture_reference texture)
 {
   bool succ = false;
   float inc = brush->getRadius() / 4.0f;
 
-  for (float pz = z - spraySize; pz < z + spraySize; pz += inc)
+  for (float pz = pos.z - spraySize; pz < pos.z + spraySize; pz += inc)
   {
-    for (float px = x - spraySize; px < x + spraySize; px += inc)
+    for (float px = pos.x - spraySize; px < pos.x + spraySize; px += inc)
     {
-      if ((sqrt(pow(px - x, 2) + pow(pz - z, 2)) <= spraySize) && ((rand() % 1000) < sprayPressure))
+      if ((sqrt(pow(px - pos.x, 2) + pow(pz - pos.z, 2)) <= spraySize) && ((rand() % 1000) < sprayPressure))
       {
-        succ |= paintTexture(px, pz, brush, strength, pressure, texture);
+        succ |= paintTexture({px, pos.y, pz}, brush, strength, pressure, texture);
       }
     }
   }
@@ -1505,32 +1614,31 @@ bool World::sprayTexture(float x, float z, Brush *brush, float strength, float p
   return succ;
 }
 
-void World::eraseTextures(float x, float z)
+void World::eraseTextures(math::vector_3d const& pos)
 {
-  for_chunk_at(x, z, [](MapChunk* chunk) {chunk->eraseTextures();});
+  for_chunk_at(pos, [](MapChunk* chunk) {chunk->eraseTextures();});
 }
 
-void World::overwriteTextureAtCurrentChunk(float x, float z, OpenGL::Texture* oldTexture, OpenGL::Texture* newTexture)
+void World::overwriteTextureAtCurrentChunk(math::vector_3d const& pos, scoped_blp_texture_reference oldTexture, scoped_blp_texture_reference newTexture)
 {
-  LogDebug << "Switching Textures at " << x << " and " << z << std::endl;
-  for_chunk_at(x, z, [&](MapChunk* chunk) {chunk->switchTexture(oldTexture, newTexture);});
+  for_chunk_at(pos, [&](MapChunk* chunk) {chunk->switchTexture(oldTexture, newTexture);});
 }
 
-void World::setHole(float x, float z, bool big, bool hole)
+void World::setHole(math::vector_3d const& pos, bool big, bool hole)
 {
-  for_chunk_at(x, z, [&](MapChunk* chunk) { chunk->setHole(x, z, big, hole); });
+  for_chunk_at(pos, [&](MapChunk* chunk) { chunk->setHole(pos, big, hole); });
 }
 
-void World::setHoleADT(float x, float z, bool hole)
+void World::setHoleADT(math::vector_3d const& pos, bool hole)
 {
-  for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) { chunk->setHole(x, z, true, hole); });
+  for_all_chunks_on_tile(pos, [&](MapChunk* chunk) { chunk->setHole(pos, true, hole); });
 }
 
 
 template<typename Fun>
-  void World::for_all_chunks_on_tile (float x, float z, Fun&& fun)
+  void World::for_all_chunks_on_tile (math::vector_3d const& pos, Fun&& fun)
 {
-  MapTile* tile (mapIndex->getTile (math::vector_3d (x, 0, z)));
+  MapTile* tile (mapIndex->getTile (pos));
   mapIndex->setChanged (tile);
 
   for (size_t ty = 0; ty < 16; ++ty)
@@ -1542,25 +1650,32 @@ template<typename Fun>
   }
 }
 
-  template<typename Fun>
-  void World::for_chunk_at(float x, float z, Fun&& fun)
+template<typename Fun>
+  void World::for_chunk_at(math::vector_3d const& pos, Fun&& fun)
   {
-    MapTile* tile(mapIndex->getTile(math::vector_3d(x, 0, z)));
+    MapTile* tile(mapIndex->getTile(pos));
     mapIndex->setChanged(tile);
-    
-    fun(tile->getChunk((x - tile->xbase) / CHUNKSIZE, (z - tile->zbase) / CHUNKSIZE));
+
+    fun(tile->getChunk((pos.x - tile->xbase) / CHUNKSIZE, (pos.z - tile->zbase) / CHUNKSIZE));
   }
 
+template<typename Fun>
+  void World::for_tile_at(math::vector_3d const& pos, Fun&& fun)
+  {
+    MapTile* tile(mapIndex->getTile(pos));
+    if (tile)
+    {
+      mapIndex->setChanged(tile);
+      fun(tile);
+    }
+  }
 
-void World::jumpToCords(math::vector_3d pos)
+void World::convert_alphamap(bool to_big_alpha)
 {
-  this->camera = pos;
-}
-
-void World::convertMapToBigAlpha()
-{
-  if (mapIndex->hasBigAlpha())
+  if (to_big_alpha == mapIndex->hasBigAlpha())
+  {
     return;
+  }    
 
   for (size_t z = 0; z < 64; z++)
   {
@@ -1574,7 +1689,7 @@ void World::convertMapToBigAlpha()
 
       if (mTile)
       {
-        mTile->toBigAlpha();
+        mTile->convert_alphamap(to_big_alpha);
         mTile->saveTile();
         mapIndex->unsetChanged(tile);
 
@@ -1586,7 +1701,7 @@ void World::convertMapToBigAlpha()
     }
   }
 
-  mapIndex->setBigAlpha();
+  mapIndex->convert_alphamap(to_big_alpha);
   mapIndex->save();
 }
 
@@ -1626,13 +1741,13 @@ void World::saveMap()
       opengl::scoped::matrix_pusher const matrix;
       gl.scalef(0.08333333f, 0.08333333f, 1.0f);
 
-      //gl.translatef(-camera.x/CHUNKSIZE,-camera.z/CHUNKSIZE,0);
+      //gl.translatef(-camera_pos.x/CHUNKSIZE,-camera_pos.z/CHUNKSIZE,0);
       gl.translatef(x * -16.0f - 8.0f, y * -16.0f - 8.0f, 0.0f);
 
 
       ATile->drawTextures();
       gl.readPixels(video.xres() / 2 - 128, video.yres() / 2 - 128, 256, 256, GL_RGB, GL_UNSIGNED_BYTE, image);
-      video.flip();
+
       std::stringstream ss;
       ss << basename.c_str() << "_map_" << x << "_" << y << ".raw";
       fid = fopen(ss.str().c_str(), "wb");
@@ -1730,6 +1845,7 @@ void World::addModel(selection_type entry, math::vector_3d newPos, bool copyit)
 void World::addM2(std::string const& filename, math::vector_3d newPos, bool copyit)
 {
   ModelInstance newModelis = ModelInstance(filename);
+  
   newModelis.d1 = mapIndex->newGUID();
   newModelis.pos = newPos;
   newModelis.sc = 1;
@@ -1774,8 +1890,9 @@ void World::addM2(std::string const& filename, math::vector_3d newPos, bool copy
 void World::addWMO(std::string const& filename, math::vector_3d newPos, bool copyit)
 {
   WMOInstance newWMOis(filename);
-  newWMOis.pos = newPos;
+	
   newWMOis.mUniqueID = mapIndex->newGUID();
+  newWMOis.pos = newPos;
 
   if (Settings::getInstance()->copyModelStats
     && copyit
@@ -1833,43 +1950,49 @@ unsigned int World::getMapID()
   return this->mMapId;
 }
 
-void World::setBaseTexture(float x, float z)
+void World::setBaseTexture(math::vector_3d const& pos)
 {
   if (!!UITexturingGUI::getSelectedTexture())
   {
-    for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) 
+    for_all_chunks_on_tile(pos, [](MapChunk* chunk)
     {
       chunk->eraseTextures();
-      chunk->addTexture(UITexturingGUI::getSelectedTexture());
-      UITexturingGUI::getSelectedTexture()->addReference();
+      chunk->addTexture(*UITexturingGUI::getSelectedTexture());
     });
   }
 }
 
-void World::swapTexture(float x, float z, OpenGL::Texture *tex)
+void World::swapTexture(math::vector_3d const& pos, scoped_blp_texture_reference tex)
 {
   if (!!UITexturingGUI::getSelectedTexture())
   {
-    for_all_chunks_on_tile(camera.x, camera.z, [&](MapChunk* chunk) { chunk->switchTexture(tex, UITexturingGUI::getSelectedTexture()); });
-  }  
+    for_all_chunks_on_tile(pos, [&](MapChunk* chunk) { chunk->switchTexture(tex, *UITexturingGUI::getSelectedTexture()); });
+  }
 }
 
-void World::removeTexDuplicateOnADT(float x, float z)
+void World::removeTexDuplicateOnADT(math::vector_3d const& pos)
 {
-  for_all_chunks_on_tile(x, z, [&](MapChunk* chunk) { chunk->textureSet->removeDuplicate(); } );
+  for_all_chunks_on_tile(pos, [](MapChunk* chunk) { chunk->_texture_set.removeDuplicate(); } );
 }
 
-void World::saveWDT()
+void World::paintLiquid( math::vector_3d const& pos
+                       , float radius
+                       , int liquid_id
+                       , bool add
+                       , math::radians const& angle
+                       , math::radians const& orientation
+                       , bool lock
+                       , math::vector_3d const& origin
+                       , bool override_height
+                       , bool override_liquid_id
+                       , float opacity_factor
+                       )
 {
-  // int lCurrentPosition = 0;
-  //sExtendableArray lWDTFile = sExtendableArray();
-  // lWDTFile.Extend( 8 + 0x4 );
-  // SetChunkHeader( lWDTFile, lCurrentPosition, 'MPHD', 4 );
-
-  // MPQFile f( "test.WDT" );
-  // f.setBuffer( lWDTFile.GetPointer<uint8_t>(), lWDTFile.mSize );
-  // f.SaveFile();
-  // f.close();
+  for_all_chunks_in_range(pos, radius, [&](MapChunk* chunk) 
+  { 
+    chunk->liquid_chunk()->paintLiquid(pos, radius, liquid_id, add, angle, orientation, lock, origin, override_height, override_liquid_id, chunk, opacity_factor);
+    return true;
+  });
 }
 
 bool World::canWaterSave(const tile_index& tile)
@@ -1878,102 +2001,16 @@ bool World::canWaterSave(const tile_index& tile)
   return !!mt && mt->canWaterSave();
 }
 
-void World::setWaterHeight(const tile_index& tile, float h)
+void World::setWaterType(math::vector_3d const& pos, int type)
 {
-  MapTile* curTile = mapIndex->getTile(tile);
-  if (!curTile)
-  {
-    return;
-  }
-
-  size_t currentLayer = Environment::getInstance()->currentWaterLayer;
-  int i, j, k = 0;
-  float newh = 0.0f;
-  for (i = 0; i < 16; ++i)
-  {
-    for (j = 0; j < 16; ++j)
-    {
-      if (curTile->getChunk((size_t)i, (size_t)j)->GetWater())
-      {
-        if (curTile->Water->getHeightChunk(j, i, currentLayer))
-        {
-          if (!k)
-          {
-            newh = curTile->Water->getHeightChunk(j, i, currentLayer) + h;
-          }
-          ++k;
-        }
-      }
-    }
-  }
-
-  if (k == 0)
-  {
-    if (mapIndex->tileLoaded(tile))
-    {
-      mapIndex->getTile(tile)->Water->setHeight(gWorld->getWaterHeight(tile) + h, currentLayer);
-      mapIndex->setChanged(tile);
-    }
-  }
-  else
-  {
-    for (i = 0; i < 16; ++i)
-    {
-      for (j = 0; j < 16; ++j)
-      {
-        if (curTile->getChunk((size_t)i, (size_t)j)->GetWater())
-        {
-          curTile->Water->setHeight(j, i, newh, currentLayer);
-        }
-      }
-    }
-    mapIndex->setChanged(tile);
-  }
-}
-
-float World::getWaterHeight(const tile_index& tile)
-{
-  return mapIndex->tileLoaded(tile)
-       ? mapIndex->getTile(tile)->Water->getHeight(Environment::getInstance()->currentWaterLayer)
-       : 0
-       ;
-}
-
-void World::setWaterTrans(const tile_index& tile, unsigned char value)
-{
-  if (mapIndex->tileLoaded(tile))
-  {
-    mapIndex->getTile(tile)->Water->setTrans(value, Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
-}
-
-unsigned char World::getWaterTrans(const tile_index& tile)
-{
-  if (mapIndex->tileLoaded(tile))
-  {
-    return mapIndex->getTile(tile)->Water->getOpacity(Environment::getInstance()->currentWaterLayer);
-  }
-  else
-  {
-    return 255;
-  }
-}
-
-void World::setWaterType(const tile_index& tile, int type)
-{
-  if (mapIndex->tileLoaded(tile))
-  {
-    mapIndex->getTile(tile)->Water->setType(type, Environment::getInstance()->currentWaterLayer);
-    mapIndex->setChanged(tile);
-  }
+  for_tile_at(pos, [&](MapTile* tile) { tile->Water.setType(type, Environment::getInstance()->currentWaterLayer);});
 }
 
 int World::getWaterType(const tile_index& tile)
 {
   if (mapIndex->tileLoaded(tile))
   {
-    return mapIndex->getTile(tile)->Water->getType(Environment::getInstance()->currentWaterLayer);
+    return mapIndex->getTile(tile)->Water.getType(Environment::getInstance()->currentWaterLayer);
   }
   else
   {
@@ -1981,48 +2018,11 @@ int World::getWaterType(const tile_index& tile)
   }
 }
 
-void World::autoGenWaterTrans(const tile_index& tile, int factor)
+void World::autoGenWaterTrans(math::vector_3d const& pos, float factor)
 {
-  if (mapIndex->tileLoaded(tile))
-  {
-    mapIndex->getTile(tile)->Water->autoGen(factor);
-    mapIndex->setChanged(tile);
-  }
+  for_tile_at(pos, [&](MapTile* tile) { tile->Water.autoGen(factor); });
 }
 
-void World::AddWaters(const tile_index& tile)
-{
-  if (mapIndex->tileLoaded(tile))
-  {
-    MapTile* curTile = mapIndex->getTile(tile);
-    for (int i = 0; i < 16; ++i)
-    {
-      for (int j = 0; j < 16; ++j)
-      {
-        if (curTile->getChunk((size_t)i, (size_t)j)->GetWater())
-        {
-          curTile->Water->addLayer(i, j, 1.0f, (unsigned char)255, Environment::getInstance()->currentWaterLayer);
-        }
-      }
-    }
-
-    mapIndex->setChanged(tile);
-  }
-}
-
-float World::HaveSelectWater(const tile_index& tile)
-{
-  if (mapIndex->tileLoaded(tile))
-  {
-    MapTile* curTile = mapIndex->getTile(tile);
-    if (curTile == 0) return 0;
-    for (int i = 0; i < 16; ++i)
-      for (int j = 0; j < 16; ++j)
-        if (curTile->getChunk((size_t)i, (size_t)j)->GetWater() && curTile->Water->HaveWater(i, j))
-          return curTile->Water->HaveWater(i, j);
-  }
-  return 0;
-}
 
 void World::fixAllGaps()
 {
@@ -2101,17 +2101,17 @@ void World::fixAllGaps()
   }
 }
 
-bool World::isUnderMap(float x, float z, float h)
+bool World::isUnderMap(math::vector_3d const& pos)
 {
-  tile_index tile(math::vector_3d(x, 0, z));
+  tile_index const tile (pos);
 
   if (mapIndex->tileLoaded(tile))
   {
-    size_t chnkX = (x / CHUNKSIZE) - tile.x * 16;
-    size_t chnkZ = (z / CHUNKSIZE) - tile.z * 16;
+    size_t chnkX = (pos.x / CHUNKSIZE) - tile.x * 16;
+    size_t chnkZ = (pos.z / CHUNKSIZE) - tile.z * 16;
 
     // check using the cursor height
-    return (mapIndex->getTile(tile)->getChunk(chnkX, chnkZ)->getMinHeight()) > h + 2.0f;
+    return (mapIndex->getTile(tile)->getChunk(chnkX, chnkZ)->getMinHeight()) > pos.y + 2.0f;
   }
 
   return true;
@@ -2120,6 +2120,148 @@ bool World::isUnderMap(float x, float z, float h)
 void World::clearHiddenModelList()
 {
   Environment::getInstance()->showModelFromHiddenList = true;
-  ModelManager::clearHiddenModelList();
-  WMOManager::clearHiddenWMOList();
+  _hidden_map_objects.clear();
+  _hidden_models.clear();
+}
+
+
+void World::selectVertices(math::vector_3d const& pos, float radius)
+{
+  _vertex_center_updated = false;
+  _vertex_border_updated = false;
+
+  for_all_chunks_in_range(pos, radius, [&](MapChunk* chunk){
+    _vertex_chunks.emplace(chunk);
+    _vertex_tiles.emplace(chunk->mt);
+    chunk->selectVertex(pos, radius, _vertices_selected);
+    return true;
+  });
+}
+
+void World::deselectVertices(math::vector_3d const& pos, float radius)
+{
+  _vertex_center_updated = false;
+  _vertex_border_updated = false;
+  std::set<math::vector_3d*> inRange;
+
+  for (math::vector_3d* v : _vertices_selected)
+  {
+    if (misc::dist(*v, pos) <= radius)
+    {
+      inRange.emplace(v);
+    }
+  }
+
+  for (math::vector_3d* v : inRange)
+  {
+    _vertices_selected.erase(v);
+  }
+
+  if (_vertices_selected.empty())
+  {
+    clearVertexSelection();
+  }
+}
+
+void World::moveVertices(float h)
+{
+  _vertex_center_updated = false;
+  for (math::vector_3d* v : _vertices_selected)
+  {
+    v->y += h;
+  }
+
+  updateVertexCenter();
+  updateSelectedVertices();
+}
+
+void World::updateSelectedVertices()
+{
+  for (MapTile* tile : _vertex_tiles)
+  {
+    mapIndex->setChanged(tile);
+  }
+
+  // fix only the border chunks to be more efficient
+  for (MapChunk* chunk : vertexBorderChunks())
+  {
+    chunk->fixVertices(_vertices_selected);
+  }
+
+  for (MapChunk* chunk : _vertex_chunks)
+  {
+    chunk->updateVerticesData();
+    chunk->recalcNorms();
+  }
+}
+
+void World::orientVertices(math::vector_3d const& ref_pos)
+{
+  math::degrees a(vertex_angle), o(vertex_orientation);
+  for (math::vector_3d* v : _vertices_selected)
+  {
+    v->y = misc::angledHeight(ref_pos, *v, a, o);
+  }
+  updateSelectedVertices();
+}
+
+void World::flattenVertices()
+{
+  float h = vertexCenter().y;
+  for (math::vector_3d* v : _vertices_selected)
+  {
+    v->y = h;
+  }
+
+  updateSelectedVertices();
+}
+
+void World::clearVertexSelection()
+{
+  vertex_angle._ = 0.0f;
+  vertex_orientation._ = 0.0f;
+  _vertex_border_updated = false;
+  _vertex_center_updated = false;
+  _vertices_selected.clear();
+  _vertex_chunks.clear();
+  _vertex_tiles.clear();
+}
+
+void World::updateVertexCenter()
+{
+  _vertex_center_updated = true;
+  _vertex_center = { 0,0,0 };
+  float f = 1.0f / _vertices_selected.size();
+  for (math::vector_3d* v : _vertices_selected)
+  {
+    _vertex_center += (*v) * f;
+  }
+}
+
+math::vector_3d& World::vertexCenter()
+{
+  if (!_vertex_center_updated)
+  {
+    updateVertexCenter();
+  }
+
+  return _vertex_center;
+}
+
+std::set<MapChunk*>& World::vertexBorderChunks()
+{
+  if (!_vertex_border_updated)
+  {
+    _vertex_border_updated = true;
+    _vertex_border_chunks.clear();
+
+    for (MapChunk* chunk : _vertex_chunks)
+    {
+      if (chunk->isBorderChunk(_vertices_selected))
+      {
+        _vertex_border_chunks.emplace(chunk);
+      }
+    }
+  }
+  return _vertex_border_chunks;
 }

@@ -167,9 +167,9 @@ struct MH2O_Header{
 };
 
 struct MH2O_Information{
-  uint16_t LiquidType;
-  uint16_t Flags;
-  float minHeight;//I just took these random ._.
+  uint16_t liquid_id;
+  uint16_t liquid_vertex_format;
+  float minHeight;
   float maxHeight;
   uint8_t xOffset;
   uint8_t yOffset;
@@ -180,8 +180,8 @@ struct MH2O_Information{
 
   MH2O_Information()
   {
-    LiquidType = 5;
-    Flags = 0;
+    liquid_id = 5;
+    liquid_vertex_format = 0;
     maxHeight = 0;
     minHeight = 0;
     xOffset = 0;

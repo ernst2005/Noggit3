@@ -14,7 +14,6 @@ enum ModelPasteMode
 {
   PASTE_ON_TERRAIN,
   PASTE_ON_SELECTION,
-  PASTE_ON_MODEL,
   PASTE_ON_CAMERA,
   PASTE_MODE_COUNT
 };
@@ -26,7 +25,7 @@ public:
 
   bool hasSelection() const;
   void copy(selection_type entry);
-  void pasteObject();
+  void pasteObject (math::vector_3d cursor_pos);
   void togglePasteMode();
 
   UIModelImport *modelImport;

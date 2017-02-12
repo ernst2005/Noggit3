@@ -4,6 +4,7 @@
 
 #include <noggit/AppState.h>
 #include <noggit/Selection.h>
+#include <noggit/tool_enums.hpp>
 
 class UIFrame;
 class World;
@@ -23,16 +24,26 @@ private:
   bool _mod_shift_down = false;
   bool _mod_space_down = false;
 
-  float ah, av, moving, strafing, updown, mousedir, movespd, turn, lookat;
+  float _camera_ah;
+  float _camera_av;
+  float moving, strafing, updown, mousedir, movespd, turn, lookat;
+  math::vector_3d _cursor_pos;
   bool key_w;
   bool look;
   bool _GUIDisplayingEnabled;
 
+  bool _highlightPaintableChunks = true;
+  bool _draw_contour = false;
+
   void save();
+  void savecurrent();
+  void saveall();
 
   float lastBrushUpdate;
 
+  selection_result intersect_result(bool terrain_only);
   void doSelection(bool selectTerrainOnly);
+  void update_cursor_pos();
 
   int mViewMode;
 
@@ -65,4 +76,6 @@ public:
   void quitask();
   void inserObjectFromExtern(int model);
   void selectModel(selection_type entry);
+
+  void set_editing_mode (editing_mode);
 };

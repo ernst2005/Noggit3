@@ -13,6 +13,9 @@
 #include <noggit/application.h>
 #include <noggit/map_index.hpp>
 #include <noggit/uid_storage.hpp>
+#ifdef USE_MYSQL_UID_STORAGE 
+  #include <mysql/mysql.h>
+#endif
 #include <opengl/scoped.hpp>
 
 
@@ -85,6 +88,24 @@ UIFrame* UIMinimapWindow::processLeftClick(float mx, float my)
 
   if (mMenuLink)
   {
+#ifdef USE_MYSQL_UID_STORAGE 
+    if ( Settings::getInstance()->mysql
+      && mysql::hasMaxUIDStoredDB(*Settings::getInstance()->mysql, gWorld->mMapId)
+       )
+    {
+      gWorld->mapIndex->loadMaxUID();
+      mMenuLink->enterMapAt(pos);
+    }
+    else if (uid_storage::getInstance()->hasMaxUIDStored(gWorld->mMapId))
+    {
+      gWorld->mapIndex->loadMaxUID();
+      mMenuLink->enterMapAt(pos);
+    }
+    else
+    {
+      mMenuLink->uidFixWindow->enterAt(pos);
+    }
+#else
     if (uid_storage::getInstance()->hasMaxUIDStored(gWorld->mMapId))
     {
       gWorld->mapIndex->loadMaxUID();
@@ -94,14 +115,14 @@ UIFrame* UIMinimapWindow::processLeftClick(float mx, float my)
     {
       mMenuLink->uidFixWindow->enterAt(pos);
     }
+#endif
   }
   else if (map)
   {
-    gWorld->GetVertex(pos.x, pos.z, &pos);
-    pos.y += 50;
-    map->jumpToCords(pos);
+	  gWorld->GetVertex(pos.x, pos.z, &pos);
+	  pos.y += 50;
+	  map->camera = pos;
   }
-
 
   return this;
 }
@@ -170,7 +191,7 @@ void UIMinimapWindow::render() const
       {
         if (gWorld->mapIndex->isTileExternal(tile))
         {
-          glColor4f(1.0f, 0.7f, 0.5f, 0.6f);
+          gl.color4f(1.0f, 0.7f, 0.5f, 0.6f);
         }
         else if (gWorld->mapIndex->tileLoaded(tile))
         {
@@ -178,7 +199,7 @@ void UIMinimapWindow::render() const
         }
         else
         {
-          glColor4f(0.8f, 0.8f, 0.8f, 0.4f);
+          gl.color4f(0.8f, 0.8f, 0.8f, 0.4f);
         }
       }
       else

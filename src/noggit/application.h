@@ -24,6 +24,8 @@ HWND static WindowHandle;
 HCTX static NEAR TabletInit(HWND hWnd);
 #endif
 
+struct SDL_Surface;
+
 class Noggit
 {
 public:
@@ -34,7 +36,6 @@ public:
   BOOL tabletActive;
 #endif
   Noggit();
-  ~Noggit();
 
   int start(int argc, char *argv[]);
 
@@ -87,7 +88,7 @@ private:
 
   void parseArgs(int argc, char *argv[]);
   void loadMPQs();
-  void mainLoop();
+  void mainLoop (SDL_Surface* primary);
 
   boost::filesystem::path getGamePath();
   boost::filesystem::path wowpath;
